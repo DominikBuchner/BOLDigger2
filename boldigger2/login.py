@@ -63,6 +63,3 @@ def bold_login():
         )
         # return the session if the login was successful to handle the requests
         return session
-
-
-bold_login()
