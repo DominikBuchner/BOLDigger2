@@ -134,4 +134,7 @@ def main(fasta_path, query_size):
     gather_download_links_species_level(session, fasta_dict, hdf_name, query_size)
 
 
-main("C:\\Users\\Dominik\\Documents\\GitHub\\BOLDigger2\\test_otus.fasta", 1)
+main(
+    "C:\\Users\\Dominik\\Documents\\GitHub\\leeselab_plate_creator\\BOLDigger2\\test_otus.fasta",
+    10,
+)
