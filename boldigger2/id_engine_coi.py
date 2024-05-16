@@ -4,6 +4,9 @@ import login
 from Bio import SeqIO
 from pathlib import Path
 from bs4 import BeautifulSoup as BSoup
+from tqdm import tqdm
+from requests.exceptions import ReadTimeout
+from requests.exceptions import ConnectionError
 
 
 # function to read the fasta file into a dictionary
@@ -69,7 +72,12 @@ def check_already_done(fasta_dict, fasta_name, project_directory):
     # If there are already download links remove those from the fasta dict
     try:
         download_links = pd.read_hdf(hdf_name)
-        ## CONTINUE CODE HERE IF SOMETHING EXISTS ALREADY
+        # remove already saved id from the fasta dict
+        for id in download_links["id"]:
+            fasta_dict.pop(id, None)
+
+        # return fasta dict and hdf name
+        return fasta_dict, hdf_name
     except FileNotFoundError:
         # simply return the fasta dict, since no modifications are needed
         return fasta_dict, hdf_name
@@ -95,13 +103,6 @@ def gather_download_links_species_level(session, fasta_dict, hdf_name, query_siz
         "sequence": bold_query_string,
     }
 
-    # give user output
-    print(
-        "{}: Gathering download links. This will take a while.".format(
-            datetime.datetime.now().strftime("%H:%M:%S")
-        )
-    )
-
     # post the request
     response = session.post(
         "https://boldsystems.org/index.php/IDS_IdentificationRequest",
@@ -117,7 +118,34 @@ def gather_download_links_species_level(session, fasta_dict, hdf_name, query_siz
         for i in range(len(download_links))
     ]
 
-    print(download_links)
+    # gather the results in a dataframe to easily append them to hdf
+    download_dataframe = pd.DataFrame(
+        data=zip(bold_query.keys(), download_links), columns=["id", "url"]
+    )
+
+    # set size limits for the columns
+    item_sizes = {"id": 100, "url": 130}
+
+    # append results to hdf
+    with pd.HDFStore(
+        hdf_name, mode="a", complib="blosc:blosclz", complevel=9
+    ) as hdf_output:
+        hdf_output.append(
+            "urls_species_level",
+            download_dataframe,
+            format="t",
+            data_columns=True,
+            min_itemsize=item_sizes,
+            complib="blosc:blosclz",
+            complevel=9,
+        )
+
+    # remove finished ids from the fasta dict
+    for id in bold_query.keys():
+        fasta_dict.pop(id, None)
+
+    # return the fasta dict again to continue
+    return fasta_dict
 
 
 def main(fasta_path, query_size):
@@ -130,11 +158,25 @@ def main(fasta_path, query_size):
     # check if download links have already been generated for any OTUs
     fasta_dict, hdf_name = check_already_done(fasta_dict, fasta_name, project_directory)
 
-    # gather download links at species level
-    gather_download_links_species_level(session, fasta_dict, hdf_name, query_size)
+    # gather download links at species level until all download links are requested
+    # give user output
+    print(
+        "{}: Starting to gather download links at from species level database.".format(
+            datetime.datetime.now().strftime("%H:%M:%S")
+        )
+    )
+
+    # continue with the progress bar code here
+    while fasta_dict:
+        try:
+            fasta_dict = gather_download_links_species_level(
+                session, fasta_dict, hdf_name, query_size
+            )
+        except (ReadTimeout, ConnectionError):
+            pass
 
 
 main(
     "C:\\Users\\Dominik\\Documents\\GitHub\\leeselab_plate_creator\\BOLDigger2\\test_otus.fasta",
-    10,
+    50,
 )
