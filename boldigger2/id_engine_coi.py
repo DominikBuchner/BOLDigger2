@@ -1,4 +1,4 @@
-import datetime, sys, more_itertools, datetime
+import datetime, sys, more_itertools, datetime, math
 import pandas as pd
 import login
 from Bio import SeqIO
@@ -166,17 +166,38 @@ def main(fasta_path, query_size):
         )
     )
 
-    # continue with the progress bar code here
-    while fasta_dict:
-        try:
-            fasta_dict = gather_download_links_species_level(
-                session, fasta_dict, hdf_name, query_size
-            )
-        except (ReadTimeout, ConnectionError):
-            pass
+    # calculate stats for the progress bar
+    total_requests = math.ceil(len(fasta_dict) / query_size)
+
+    # request the server until all links have been generated
+    with tqdm(total=total_requests, desc="Generating download links") as pbar:
+        while fasta_dict:
+            try:
+                fasta_dict = gather_download_links_species_level(
+                    session, fasta_dict, hdf_name, query_size
+                )
+                # update the progress bar
+                pbar.update(1)
+            except (ReadTimeout, ConnectionError):
+                # repeat if there is no response
+                # give user output
+                tqdm.write(
+                    "{}: Starting to gather download links at from species level database.".format(
+                        datetime.datetime.now().strftime("%H:%M:%S")
+                    )
+                )
+
+    # give user output
+    print(
+        "{}: Species level download links successfully generated.".format(
+            datetime.datetime.now().strftime("%H:%M:%S")
+        )
+    )
+
+    # continue to download the top 100 hits asynchronosly
 
 
 main(
-    "C:\\Users\\Dominik\\Documents\\GitHub\\leeselab_plate_creator\\BOLDigger2\\test_otus.fasta",
+    "C:\\Users\\Dominik\\Documents\\GitHub\\BOLDigger2\\test_otus.fasta",
     50,
 )
