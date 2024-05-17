@@ -1,12 +1,15 @@
-import datetime, sys, more_itertools, datetime, math
+import datetime, sys, more_itertools, datetime, requests_html, asyncio, login
 import pandas as pd
-import login
+import numpy as np
 from Bio import SeqIO
 from pathlib import Path
 from bs4 import BeautifulSoup as BSoup
 from tqdm import tqdm
 from requests.exceptions import ReadTimeout
 from requests.exceptions import ConnectionError
+from io import StringIO
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 
 # function to read the fasta file into a dictionary
@@ -103,11 +106,11 @@ def gather_download_links_species_level(session, fasta_dict, hdf_name, query_siz
         "sequence": bold_query_string,
     }
 
-    # post the request
+    # post the request, reduce timeout to 5 minutes, decrease query size instead of just retrying
     response = session.post(
         "https://boldsystems.org/index.php/IDS_IdentificationRequest",
         data=post_request_data,
-        timeout=900,
+        timeout=300,
     )
 
     # extract the download links from the response
@@ -148,6 +151,159 @@ def gather_download_links_species_level(session, fasta_dict, hdf_name, query_siz
     return fasta_dict
 
 
+# function to update the query size
+# accepts that query size and an increase argument. negative increase values will lead to a decrease
+def update_query_size(query_size, increase):
+    # update the query size via increase
+    query_size = query_size + increase
+
+    # return the updated value. can only be in the range of 1 to 50
+    if query_size < 1:
+        query_size = 1
+        return query_size
+    elif query_size > 50:
+        query_size = 50
+        return query_size
+    else:
+        return query_size
+
+
+# asynchronous request code to send n requests at once
+# database is a string specifying where the data comes from
+async def as_request(species_id, url, as_session, database):
+    # add all requests to the eventloop
+    # request top 100 hits
+    print("downloading {}".format(species_id))
+    response = await as_session.get("{}&display=100".format(url), timeout=60)
+    # parse the response and pass it to pandas
+    response = BSoup(response.text, "html5lib")
+    # read the tables from the response
+    response_table = pd.read_html(
+        StringIO(str(response)),
+        header=0,
+        converters={"Similarity (%)": float},
+        flavor="html5lib",
+    )
+
+    # code to generate the no match table
+    if len(response_table) == 2:
+        result = pd.DataFrame(
+            [[species_id] + ["No Match"] * 7 + [0] + [""] * 2],
+            columns=[
+                "ID",
+                "Phylum",
+                "Class",
+                "Order",
+                "Family",
+                "Genus",
+                "Species",
+                "Subspecies",
+                "Similarity",
+                "Status",
+                "Process_ID",
+            ],
+        )
+
+    # code to catch broken records
+    elif len(response_table) == 4:
+        result = pd.DataFrame(
+            [[species_id] + ["Broken record"] * 7 + [0] + [""] * 2],
+            columns=[
+                "ID",
+                "Phylum",
+                "Class",
+                "Order",
+                "Family",
+                "Genus",
+                "Species",
+                "Subspecies",
+                "Similarity",
+                "Status",
+                "Process_ID",
+            ],
+        )
+
+    # code to generate the result table
+    else:
+        result = response_table[4]
+        ids = [
+            tag.get("id") for tag in response.find_all(class_="publicrecord")
+        ]  # collect process ids for public records
+        result.columns = [
+            "Phylum",
+            "Class",
+            "Order",
+            "Family",
+            "Genus",
+            "Species",
+            "Subspecies",
+            "Similarity",
+            "Status",
+        ]
+        result["Process_ID"] = [
+            ids.pop(0) if status else np.nan
+            for status in np.where(result["Status"] == "Published", True, False)
+        ]
+        result[
+            [
+                "Phylum",
+                "Class",
+                "Order",
+                "Family",
+                "Genus",
+                "Species",
+                "Subspecies",
+                "Status",
+            ]
+        ] = result[
+            [
+                "Phylum",
+                "Class",
+                "Order",
+                "Family",
+                "Genus",
+                "Species",
+                "Subspecies",
+                "Status",
+            ]
+        ].fillna(
+            ""
+        )
+
+        # add an identifier column to be able to sort the table
+        result.insert(0, "ID", species_id)
+
+    print(result)
+
+
+# function to create the asynchronous session
+async def as_session(hdf_name_download_links):
+    as_session = requests_html.AsyncHTMLSession()
+    as_session.headers.update(
+        {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.82 Safari/537.36"
+        }
+    )
+    retry_strategy = Retry(
+        total=15,
+        status_forcelist=[400, 401, 403, 404, 413, 429, 502, 503, 504],
+        backoff_factor=1,
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    as_session.mount("https://", adapter)
+    as_session.mount("http://", adapter)
+
+    # create all requests
+    tasks = pd.read_hdf(hdf_name_download_links)
+    tasks = (
+        as_request(id, url, as_session, "test")
+        for id, url in zip(tasks["id"], tasks["url"])
+    )
+
+    # return the result
+    return await asyncio.gather(*tasks)
+
+
 def main(fasta_path, query_size):
     # log in to BOLD to generate the session
     session = login.bold_login()
@@ -156,7 +312,9 @@ def main(fasta_path, query_size):
     fasta_dict, fasta_name, project_directory = read_fasta(fasta_path)
 
     # check if download links have already been generated for any OTUs
-    fasta_dict, hdf_name = check_already_done(fasta_dict, fasta_name, project_directory)
+    fasta_dict, hdf_name_download_links = check_already_done(
+        fasta_dict, fasta_name, project_directory
+    )
 
     # gather download links at species level until all download links are requested
     # give user output
@@ -166,26 +324,28 @@ def main(fasta_path, query_size):
         )
     )
 
-    # calculate stats for the progress bar
-    total_requests = math.ceil(len(fasta_dict) / query_size)
-
     # request the server until all links have been generated
-    with tqdm(total=total_requests, desc="Generating download links") as pbar:
+    with tqdm(total=len(fasta_dict), desc="Generating download links") as pbar:
         while fasta_dict:
             try:
                 fasta_dict = gather_download_links_species_level(
-                    session, fasta_dict, hdf_name, query_size
+                    session, fasta_dict, hdf_name_download_links, query_size
                 )
                 # update the progress bar
-                pbar.update(1)
+                pbar.update(query_size)
+                # update the query size by 5
+                query_size = update_query_size(query_size, 5)
             except (ReadTimeout, ConnectionError):
                 # repeat if there is no response
                 # give user output
                 tqdm.write(
-                    "{}: Starting to gather download links at from species level database.".format(
+                    "{}: BOLD did not respond. Retrying with reduced query size.".format(
                         datetime.datetime.now().strftime("%H:%M:%S")
                     )
                 )
+
+                # update the query size
+                query_size = update_query_size(query_size, -5)
 
     # give user output
     print(
@@ -195,9 +355,26 @@ def main(fasta_path, query_size):
     )
 
     # continue to download the top 100 hits asynchronosly
+    asyncio.run(as_session(hdf_name_download_links))
+
+    # TEST CODE TO FIND OUT HOW TO SCRAPE
+    # session = requests_html.HTMLSession()
+    # r = session.get(
+    #     "https://boldsystems.org/index.php/IDS_SingleResult?token=lokal0209_39E754CD-0101-4705-96E8-CB7F4775638F"
+    # )
+
+    # r = BSoup(r.text, "html5lib")
+    # r = pd.read_html(
+    #     StringIO(str(r)),
+    #     header=0,
+    #     converters={"Similarity (%)": float},
+    #     flavor="html5lib",
+    # )
+
+    # print(len(r))
 
 
 main(
-    "C:\\Users\\Dominik\\Documents\\GitHub\\BOLDigger2\\test_otus.fasta",
-    50,
+    "C:\\Users\\Dominik\\Documents\\GitHub\\leeselab_plate_creator\\BOLDigger2\\test_otus.fasta",
+    1,
 )
