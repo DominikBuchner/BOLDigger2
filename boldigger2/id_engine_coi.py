@@ -173,39 +173,19 @@ def update_query_size(query_size, increase):
 async def as_request(species_id, url, as_session, database):
     # add all requests to the eventloop
     # request top 100 hits
-    print("downloading {}".format(species_id))
+    if database == "species":
+        print("Downloading top 100 species level hits for {}".format(species_id))
+    else:
+        print("Downloading top 100 all level hits for {}".format(species_id))
+
     response = await as_session.get("{}&display=100".format(url), timeout=60)
     # parse the response and pass it to pandas
     response = BSoup(response.text, "html5lib")
-    # read the tables from the response
-    response_table = pd.read_html(
-        StringIO(str(response)),
-        header=0,
-        converters={"Similarity (%)": float},
-        flavor="html5lib",
-    )
 
-    # code to generate the no match table
-    if len(response_table) == 2:
-        result = pd.DataFrame(
-            [[species_id] + ["No Match"] * 7 + [0] + [""] * 2],
-            columns=[
-                "ID",
-                "Phylum",
-                "Class",
-                "Order",
-                "Family",
-                "Genus",
-                "Species",
-                "Subspecies",
-                "Similarity",
-                "Status",
-                "Process_ID",
-            ],
-        )
+    # check for broken records already here in the raw html, since a valid and a broken record both return 4 tables
+    broken_record = response.find_all("div", id="kohana_error")
 
-    # code to catch broken records
-    elif len(response_table) == 4:
+    if len(broken_record) == 1:
         result = pd.DataFrame(
             [[species_id] + ["Broken record"] * 7 + [0] + [""] * 2],
             columns=[
@@ -222,62 +202,97 @@ async def as_request(species_id, url, as_session, database):
                 "Process_ID",
             ],
         )
-
-    # code to generate the result table
     else:
-        result = response_table[4]
-        ids = [
-            tag.get("id") for tag in response.find_all(class_="publicrecord")
-        ]  # collect process ids for public records
-        result.columns = [
-            "Phylum",
-            "Class",
-            "Order",
-            "Family",
-            "Genus",
-            "Species",
-            "Subspecies",
-            "Similarity",
-            "Status",
-        ]
-        result["Process_ID"] = [
-            ids.pop(0) if status else np.nan
-            for status in np.where(result["Status"] == "Published", True, False)
-        ]
-        result[
-            [
-                "Phylum",
-                "Class",
-                "Order",
-                "Family",
-                "Genus",
-                "Species",
-                "Subspecies",
-                "Status",
-            ]
-        ] = result[
-            [
-                "Phylum",
-                "Class",
-                "Order",
-                "Family",
-                "Genus",
-                "Species",
-                "Subspecies",
-                "Status",
-            ]
-        ].fillna(
-            ""
+        # read the tables from the response if the result table is not broken
+        response_table = pd.read_html(
+            StringIO(str(response)),
+            header=0,
+            converters={"Similarity (%)": float},
+            flavor="html5lib",
         )
 
-        # add an identifier column to be able to sort the table
-        result.insert(0, "ID", species_id)
+        # code to generate the no match table
+        if len(response_table) == 2:
+            result = pd.DataFrame(
+                [[species_id] + ["No Match"] * 7 + [0] + [""] * 2],
+                columns=[
+                    "ID",
+                    "Phylum",
+                    "Class",
+                    "Order",
+                    "Family",
+                    "Genus",
+                    "Species",
+                    "Subspecies",
+                    "Similarity",
+                    "Status",
+                    "Process_ID",
+                ],
+            )
+        else:
+            result = response_table[-1]
+            ids = [
+                tag.get("id") for tag in response.find_all(class_="publicrecord")
+            ]  # collect process ids for public records
+            result.columns = [
+                "Phylum",
+                "Class",
+                "Order",
+                "Family",
+                "Genus",
+                "Species",
+                "Subspecies",
+                "Similarity",
+                "Status",
+            ]
+            result["Process_ID"] = [
+                ids.pop(0) if status else np.nan
+                for status in np.where(result["Status"] == "Published", True, False)
+            ]
+            result[
+                [
+                    "Phylum",
+                    "Class",
+                    "Order",
+                    "Family",
+                    "Genus",
+                    "Species",
+                    "Subspecies",
+                    "Status",
+                ]
+            ] = result[
+                [
+                    "Phylum",
+                    "Class",
+                    "Order",
+                    "Family",
+                    "Genus",
+                    "Species",
+                    "Subspecies",
+                    "Status",
+                ]
+            ].fillna(
+                ""
+            )
 
+            # add an identifier column to be able to sort the table
+            result.insert(0, "ID", species_id)
     print(result)
 
 
+# set the concurrent download limit here
+# code has been timed to find the optimal download time
+sem = asyncio.Semaphore(6)
+
+
+# function to limit the maximum concurrent downloads
+async def limit_concurrency(species_id, url, as_session, database):
+    async with sem:
+        return await as_request(species_id, url, as_session, database)
+
+
 # function to create the asynchronous session
-async def as_session(hdf_name_download_links):
+async def as_session(hdf_name_download_links, database):
     as_session = requests_html.AsyncHTMLSession()
     as_session.headers.update(
         {
@@ -296,7 +311,7 @@ async def as_session(hdf_name_download_links):
     # create all requests
     tasks = pd.read_hdf(hdf_name_download_links)
     tasks = (
-        as_request(id, url, as_session, "test")
+        limit_concurrency(id, url, as_session, database)
         for id, url in zip(tasks["id"], tasks["url"])
     )
 
@@ -354,24 +369,10 @@ def main(fasta_path, query_size):
         )
     )
 
+    # check if some of the links have already been downloaded
+
     # continue to download the top 100 hits asynchronosly
-    asyncio.run(as_session(hdf_name_download_links))
-
-    # TEST CODE TO FIND OUT HOW TO SCRAPE
-    # session = requests_html.HTMLSession()
-    # r = session.get(
-    #     "https://boldsystems.org/index.php/IDS_SingleResult?token=lokal0209_39E754CD-0101-4705-96E8-CB7F4775638F"
-    # )
-
-    # r = BSoup(r.text, "html5lib")
-    # r = pd.read_html(
-    #     StringIO(str(r)),
-    #     header=0,
-    #     converters={"Similarity (%)": float},
-    #     flavor="html5lib",
-    # )
-
-    # print(len(r))
+    asyncio.run(as_session(hdf_name_download_links, "species"))
 
 
 main(
