@@ -170,7 +170,7 @@ def update_query_size(query_size, increase):
 
 # asynchronous request code to send n requests at once
 # database is a string specifying where the data comes from
-async def as_request(species_id, url, as_session, database):
+async def as_request(species_id, url, as_session, database, hdf_name_top_100_hits):
     # add all requests to the eventloop
     # request top 100 hits
     if database == "species":
@@ -187,7 +187,7 @@ async def as_request(species_id, url, as_session, database):
 
     if len(broken_record) == 1:
         result = pd.DataFrame(
-            [[species_id] + ["Broken record"] * 7 + [0] + [""] * 2],
+            [[species_id] + ["Broken record"] * 7 + [0.0] + [""] * 2],
             columns=[
                 "ID",
                 "Phylum",
@@ -214,7 +214,7 @@ async def as_request(species_id, url, as_session, database):
         # code to generate the no match table
         if len(response_table) == 2:
             result = pd.DataFrame(
-                [[species_id] + ["No Match"] * 7 + [0] + [""] * 2],
+                [[species_id] + ["No Match"] * 7 + [0.0] + [""] * 2],
                 columns=[
                     "ID",
                     "Phylum",
@@ -249,35 +249,45 @@ async def as_request(species_id, url, as_session, database):
                 ids.pop(0) if status else np.nan
                 for status in np.where(result["Status"] == "Published", True, False)
             ]
-            result[
-                [
-                    "Phylum",
-                    "Class",
-                    "Order",
-                    "Family",
-                    "Genus",
-                    "Species",
-                    "Subspecies",
-                    "Status",
-                ]
-            ] = result[
-                [
-                    "Phylum",
-                    "Class",
-                    "Order",
-                    "Family",
-                    "Genus",
-                    "Species",
-                    "Subspecies",
-                    "Status",
-                ]
-            ].fillna(
-                ""
-            )
 
             # add an identifier column to be able to sort the table
             result.insert(0, "ID", species_id)
-    print(result)
+
+    # fill na values with empty strings to make frames compatible with hdf format
+    result = result.fillna("")
+
+    # add the database to the result table
+    result["database"] = database
+
+    # add the results to the hdf storage
+    # set size limits for the columns
+    item_sizes = {
+        "ID": 100,
+        "Phylum": 80,
+        "Class": 80,
+        "Order": 80,
+        "Family": 80,
+        "Genus": 80,
+        "Species": 80,
+        "Subspecies": 80,
+        "Status": 15,
+        "Process_ID": 25,
+        "database": 20,
+    }
+
+    # append results to hdf
+    with pd.HDFStore(
+        hdf_name_top_100_hits, mode="a", complib="blosc:blosclz", complevel=9
+    ) as hdf_output:
+        hdf_output.append(
+            "top_100_hits",
+            result,
+            format="t",
+            data_columns=True,
+            min_itemsize=item_sizes,
+            complib="blosc:blosclz",
+            complevel=9,
+        )
 
 
 # set the concurrent download limit here
@@ -286,13 +296,17 @@ sem = asyncio.Semaphore(6)
 
 
 # function to limit the maximum concurrent downloads
-async def limit_concurrency(species_id, url, as_session, database):
+async def limit_concurrency(
+    species_id, url, as_session, database, hdf_name_top_100_hits
+):
     async with sem:
-        return await as_request(species_id, url, as_session, database)
+        return await as_request(
+            species_id, url, as_session, database, hdf_name_top_100_hits
+        )
 
 
 # function to create the asynchronous session
-async def as_session(hdf_name_download_links, database):
+async def as_session(hdf_name_download_links, database, hdf_name_top_100_hits):
     as_session = requests_html.AsyncHTMLSession()
     as_session.headers.update(
         {
@@ -311,7 +325,7 @@ async def as_session(hdf_name_download_links, database):
     # create all requests
     tasks = pd.read_hdf(hdf_name_download_links)
     tasks = (
-        limit_concurrency(id, url, as_session, database)
+        limit_concurrency(id, url, as_session, database, hdf_name_top_100_hits)
         for id, url in zip(tasks["id"], tasks["url"])
     )
 
@@ -369,13 +383,18 @@ def main(fasta_path, query_size):
         )
     )
 
+    # generate a name for the top hits hdf file
+    hdf_name_top_100_hits = project_directory.joinpath(
+        "{}_top_100_hits.h5.lz".format(fasta_name)
+    )
+
     # check if some of the links have already been downloaded
 
-    # continue to download the top 100 hits asynchronosly
-    asyncio.run(as_session(hdf_name_download_links, "species"))
+    # continue to download the top 100 hits asynchronosly for species level
+    asyncio.run(as_session(hdf_name_download_links, "species", hdf_name_top_100_hits))
 
 
 main(
-    "C:\\Users\\Dominik\\Documents\\GitHub\\leeselab_plate_creator\\BOLDigger2\\test_otus.fasta",
+    "C:\\Users\\Dominik\\Documents\\GitHub\\BOLDigger2\\test_otus.fasta",
     1,
 )
