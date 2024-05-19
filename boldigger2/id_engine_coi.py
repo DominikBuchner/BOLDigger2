@@ -174,9 +174,19 @@ async def as_request(species_id, url, as_session, database, hdf_name_top_100_hit
     # add all requests to the eventloop
     # request top 100 hits
     if database == "species":
-        print("Downloading top 100 species level hits for {}".format(species_id))
+        # give user output
+        print(
+            "{}: Downloading top 100 species level records for {}".format(
+                datetime.datetime.now().strftime("%H:%M:%S"), species_id
+            )
+        )
+
     else:
-        print("Downloading top 100 all level hits for {}".format(species_id))
+        print(
+            "{}: Downloading top 100 hits of all records for {}".format(
+                datetime.datetime.now().strftime("%H:%M:%S"), species_id
+            )
+        )
 
     response = await as_session.get("{}&display=100".format(url), timeout=60)
     # parse the response and pass it to pandas
@@ -306,7 +316,7 @@ async def limit_concurrency(
 
 
 # function to create the asynchronous session
-async def as_session(hdf_name_download_links, database, hdf_name_top_100_hits):
+async def as_session(download_links_species, database, hdf_name_top_100_hits):
     as_session = requests_html.AsyncHTMLSession()
     as_session.headers.update(
         {
@@ -323,7 +333,7 @@ async def as_session(hdf_name_download_links, database, hdf_name_top_100_hits):
     as_session.mount("http://", adapter)
 
     # create all requests
-    tasks = pd.read_hdf(hdf_name_download_links)
+    tasks = download_links_species.copy()
     tasks = (
         limit_concurrency(id, url, as_session, database, hdf_name_top_100_hits)
         for id, url in zip(tasks["id"], tasks["url"])
@@ -331,6 +341,29 @@ async def as_session(hdf_name_download_links, database, hdf_name_top_100_hits):
 
     # return the result
     return await asyncio.gather(*tasks)
+
+
+# function to check of some of the top 100 hits have already been downloaded
+def top_100_downloaded(hdf_name_top_100_hits, hdf_name_download_links, database):
+    # load the download links
+    download_links_species = pd.read_hdf(hdf_name_download_links)
+    try:
+        # read already downloaded top 100 hits
+        top_100_hits = pd.read_hdf(hdf_name_top_100_hits)
+        # only select the correct database
+        top_100_hits = top_100_hits.loc[top_100_hits["database"] == database]
+        # find all ids that already have been selected
+        ids_done = top_100_hits["ID"].unique()
+
+        # remove all links that are already done
+        download_links_species = download_links_species[
+            ~download_links_species["id"].isin(ids_done)
+        ]
+    except FileNotFoundError:
+        # if there is no data downloaded yet just return all download links
+        pass
+
+    return download_links_species
 
 
 def main(fasta_path, query_size):
@@ -389,9 +422,22 @@ def main(fasta_path, query_size):
     )
 
     # check if some of the links have already been downloaded
+    download_links_species = top_100_downloaded(
+        hdf_name_top_100_hits, hdf_name_download_links, "species"
+    )
 
     # continue to download the top 100 hits asynchronosly for species level
-    asyncio.run(as_session(hdf_name_download_links, "species", hdf_name_top_100_hits))
+    if not len(download_links_species.index) == 0:
+        asyncio.run(
+            as_session(download_links_species, "species", hdf_name_top_100_hits)
+        )
+
+    # give user output
+    print(
+        "{}: Species level top 100 records successfully downloaded.".format(
+            datetime.datetime.now().strftime("%H:%M:%S")
+        )
+    )
 
 
 main(
