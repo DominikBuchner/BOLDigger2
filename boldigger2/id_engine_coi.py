@@ -5,11 +5,13 @@ from Bio import SeqIO
 from pathlib import Path
 from bs4 import BeautifulSoup as BSoup
 from tqdm import tqdm
+from tqdm.asyncio import tqdm_asyncio
 from requests.exceptions import ReadTimeout
 from requests.exceptions import ConnectionError
 from io import StringIO
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from string import punctuation, digits
 
 
 # function to read the fasta file into a dictionary
@@ -67,7 +69,7 @@ def read_fasta(fasta_path):
 
 
 # function to check for which OTUs download links have already been generated
-def check_already_done(fasta_dict, fasta_name, project_directory):
+def check_already_done(fasta_dict, fasta_name, project_directory, database):
     # generate a filename for the hdf link storage file
     hdf_name = project_directory.joinpath("{}_download_links.h5.lz".format(fasta_name))
 
@@ -75,6 +77,7 @@ def check_already_done(fasta_dict, fasta_name, project_directory):
     # If there are already download links remove those from the fasta dict
     try:
         download_links = pd.read_hdf(hdf_name)
+        download_links = download_links.loc[download_links["database"] == database]
         # remove already saved id from the fasta dict
         for id in download_links["id"]:
             fasta_dict.pop(id, None)
@@ -87,7 +90,7 @@ def check_already_done(fasta_dict, fasta_name, project_directory):
 
 
 # function to gather download links and append them to the hdf storage
-def gather_download_links_species_level(session, fasta_dict, hdf_name, query_size):
+def gather_download_links(session, fasta_dict, hdf_name, query_size, database):
     # extract query-size elements from the fasta dict
     bold_query = dict(more_itertools.take(query_size, fasta_dict.items()))
 
@@ -99,12 +102,20 @@ def gather_download_links_species_level(session, fasta_dict, hdf_name, query_siz
         bold_query_string += "{}\n".format(bold_query[key].seq)
 
     # generate the data for the post request
-    post_request_data = {
-        "tabtype": "animalTabPane",
-        "historicalDB": "",
-        "searchdb": "COX1_SPECIES",
-        "sequence": bold_query_string,
-    }
+    if database == "species":
+        post_request_data = {
+            "tabtype": "animalTabPane",
+            "historicalDB": "",
+            "searchdb": "COX1_SPECIES",
+            "sequence": bold_query_string,
+        }
+    else:
+        post_request_data = {
+            "tabtype": "animalTabPane",
+            "historicalDB": "",
+            "searchdb": "COX1",
+            "sequence": bold_query_string,
+        }
 
     # post the request, reduce timeout to 5 minutes, decrease query size instead of just retrying
     response = session.post(
@@ -126,15 +137,18 @@ def gather_download_links_species_level(session, fasta_dict, hdf_name, query_siz
         data=zip(bold_query.keys(), download_links), columns=["id", "url"]
     )
 
+    # add the database column
+    download_dataframe["database"] = database
+
     # set size limits for the columns
-    item_sizes = {"id": 100, "url": 130}
+    item_sizes = {"id": 100, "url": 130, "database": 15}
 
     # append results to hdf
     with pd.HDFStore(
         hdf_name, mode="a", complib="blosc:blosclz", complevel=9
     ) as hdf_output:
         hdf_output.append(
-            "urls_species_level",
+            "download_links",
             download_dataframe,
             format="t",
             data_columns=True,
@@ -175,14 +189,14 @@ async def as_request(species_id, url, as_session, database, hdf_name_top_100_hit
     # request top 100 hits
     if database == "species":
         # give user output
-        print(
+        tqdm.write(
             "{}: Downloading top 100 species level records for {}".format(
                 datetime.datetime.now().strftime("%H:%M:%S"), species_id
             )
         )
 
     else:
-        print(
+        tqdm.write(
             "{}: Downloading top 100 hits of all records for {}".format(
                 datetime.datetime.now().strftime("%H:%M:%S"), species_id
             )
@@ -212,39 +226,21 @@ async def as_request(species_id, url, as_session, database, hdf_name_top_100_hit
                 "Process_ID",
             ],
         )
-    else:
-        # read the tables from the response if the result table is not broken
-        response_table = pd.read_html(
-            StringIO(str(response)),
-            header=0,
-            converters={"Similarity (%)": float},
-            flavor="html5lib",
-        )
 
-        # code to generate the no match table
-        if len(response_table) == 2:
-            result = pd.DataFrame(
-                [[species_id] + ["No Match"] * 7 + [0.0] + [""] * 2],
-                columns=[
-                    "ID",
-                    "Phylum",
-                    "Class",
-                    "Order",
-                    "Family",
-                    "Genus",
-                    "Species",
-                    "Subspecies",
-                    "Similarity",
-                    "Status",
-                    "Process_ID",
-                ],
-            )
-        else:
-            result = response_table[-1]
-            ids = [
-                tag.get("id") for tag in response.find_all(class_="publicrecord")
-            ]  # collect process ids for public records
-            result.columns = [
+    # read the tables from the response if the result table is not broken
+    response_table = pd.read_html(
+        StringIO(str(response)),
+        header=0,
+        converters={"Similarity (%)": float},
+        flavor="html5lib",
+    )
+
+    # code to generate the no match table
+    if len(response_table) == 2:
+        result = pd.DataFrame(
+            [[species_id] + ["No Match"] * 7 + [0.0] + [""] * 2],
+            columns=[
+                "ID",
                 "Phylum",
                 "Class",
                 "Order",
@@ -254,14 +250,49 @@ async def as_request(species_id, url, as_session, database, hdf_name_top_100_hit
                 "Subspecies",
                 "Similarity",
                 "Status",
-            ]
-            result["Process_ID"] = [
-                ids.pop(0) if status else np.nan
-                for status in np.where(result["Status"] == "Published", True, False)
-            ]
+                "Process_ID",
+            ],
+        )
+    else:
+        # further strip down the html to only collect the top 100 hits irrespective of database used
+        if database == "species":
+            response = response.select('h3:-soup-contains("Top 100 Matches")')[
+                -1
+            ].find_next("table", class_="table resultsTable noborder")
+        else:
+            response = response.select('h3:-soup-contains("Top 100 Matches")')[
+                -1
+            ].find_next("table", class_="resultsTable noborder")
 
-            # add an identifier column to be able to sort the table
-            result.insert(0, "ID", species_id)
+        # finally scrape the correct response table
+        result = pd.read_html(
+            StringIO(str(response)),
+            header=0,
+            converters={"Similarity (%)": float},
+            flavor="html5lib",
+        )[-1]
+
+        ids = [
+            tag.get("id") for tag in response.find_all(class_="publicrecord")
+        ]  # collect process ids for public records
+        result.columns = [
+            "Phylum",
+            "Class",
+            "Order",
+            "Family",
+            "Genus",
+            "Species",
+            "Subspecies",
+            "Similarity",
+            "Status",
+        ]
+        result["Process_ID"] = [
+            ids.pop(0) if status else np.nan
+            for status in np.where(result["Status"] == "Published", True, False)
+        ]
+
+        # add an identifier column to be able to sort the table
+        result.insert(0, "ID", species_id)
 
     # fill na values with empty strings to make frames compatible with hdf format
     result = result.fillna("")
@@ -340,13 +371,15 @@ async def as_session(download_links_species, database, hdf_name_top_100_hits):
     )
 
     # return the result
-    return await asyncio.gather(*tasks)
+    return await tqdm_asyncio.gather(*tasks)
 
 
 # function to check of some of the top 100 hits have already been downloaded
 def top_100_downloaded(hdf_name_top_100_hits, hdf_name_download_links, database):
     # load the download links
-    download_links_species = pd.read_hdf(hdf_name_download_links)
+    download_links = pd.read_hdf(hdf_name_download_links)
+    # filter for the correct database
+    download_links = download_links.loc[download_links["database"] == database]
     try:
         # read already downloaded top 100 hits
         top_100_hits = pd.read_hdf(hdf_name_top_100_hits)
@@ -356,14 +389,45 @@ def top_100_downloaded(hdf_name_top_100_hits, hdf_name_download_links, database)
         ids_done = top_100_hits["ID"].unique()
 
         # remove all links that are already done
-        download_links_species = download_links_species[
-            ~download_links_species["id"].isin(ids_done)
-        ]
+        download_links = download_links[~download_links["id"].isin(ids_done)]
     except FileNotFoundError:
         # if there is no data downloaded yet just return all download links
         pass
 
-    return download_links_species
+    return download_links
+
+
+# function to check which species level hits can used straight away (similarity > 97%, valid name)
+# and where additional data needs to be requested, returns a fresh fasta dict with everything that needs to
+# be identified again
+def check_valid_species_records(fasta_dict, hdf_name_top_100_hits):
+    # read the hdf
+    top_100_hits_species = pd.read_hdf(hdf_name_top_100_hits)
+    # filter for species level database only
+    top_100_hits_species = top_100_hits_species.loc[
+        top_100_hits_species["database"] == "species"
+    ]
+    # fill empty string with NA values for easy filtering
+    top_100_hits_species = top_100_hits_species.replace("", np.nan)
+    # remove digits and punctuation in species column
+    specials = punctuation + digits
+    top_100_hits_species["Species"] = np.where(
+        top_100_hits_species["Species"].str.contains("[{}]".format(specials)),
+        np.nan,
+        top_100_hits_species["Species"],
+    )
+    # drop na values from species column
+    top_100_hits_species = top_100_hits_species.dropna(subset="Species")
+    # only keep values with similarity >= 97%
+    top_100_hits_species = top_100_hits_species.loc[
+        top_100_hits_species["Similarity"] >= 97
+    ]
+
+    # pop those values from the fasta dict
+    for key in top_100_hits_species["ID"]:
+        fasta_dict.pop(key, None)
+
+    return fasta_dict
 
 
 def main(fasta_path, query_size):
@@ -375,7 +439,7 @@ def main(fasta_path, query_size):
 
     # check if download links have already been generated for any OTUs
     fasta_dict, hdf_name_download_links = check_already_done(
-        fasta_dict, fasta_name, project_directory
+        fasta_dict, fasta_name, project_directory, database="species"
     )
 
     # gather download links at species level until all download links are requested
@@ -390,8 +454,12 @@ def main(fasta_path, query_size):
     with tqdm(total=len(fasta_dict), desc="Generating download links") as pbar:
         while fasta_dict:
             try:
-                fasta_dict = gather_download_links_species_level(
-                    session, fasta_dict, hdf_name_download_links, query_size
+                fasta_dict = gather_download_links(
+                    session,
+                    fasta_dict,
+                    hdf_name_download_links,
+                    query_size,
+                    database="species",
                 )
                 # update the progress bar
                 pbar.update(query_size)
@@ -423,7 +491,7 @@ def main(fasta_path, query_size):
 
     # check if some of the links have already been downloaded
     download_links_species = top_100_downloaded(
-        hdf_name_top_100_hits, hdf_name_download_links, "species"
+        hdf_name_top_100_hits, hdf_name_download_links, database="species"
     )
 
     # continue to download the top 100 hits asynchronosly for species level
@@ -439,8 +507,79 @@ def main(fasta_path, query_size):
         )
     )
 
+    # reread the fasta to generate a fresh fasta dict
+    fasta_dict, fasta_name, project_directory = read_fasta(fasta_path)
+
+    # filter the fasta dict for hits no having a species level hit, reset query size to 1
+    fasta_dict = check_valid_species_records(fasta_dict, hdf_name_top_100_hits)
+    query_size = 1
+    # gather download links at all barcode records level until all download links are requested
+    # give user output
+    print(
+        "{}: Starting to gather download links at from all records database.".format(
+            datetime.datetime.now().strftime("%H:%M:%S")
+        )
+    )
+
+    # check if download links have already been generated for any OTUs
+    fasta_dict, hdf_name_download_links = check_already_done(
+        fasta_dict, fasta_name, project_directory, database="all_records"
+    )
+
+    # request the server until all links have been generated
+    with tqdm(total=len(fasta_dict), desc="Generating download links") as pbar:
+        while fasta_dict:
+            try:
+                fasta_dict = gather_download_links(
+                    session,
+                    fasta_dict,
+                    hdf_name_download_links,
+                    query_size,
+                    database="all_records",
+                )
+                # update the progress bar
+                pbar.update(query_size)
+                # update the query size by 5
+                query_size = update_query_size(query_size, 5)
+            except (ReadTimeout, ConnectionError):
+                # repeat if there is no response
+                # give user output
+                tqdm.write(
+                    "{}: BOLD did not respond. Retrying with reduced query size.".format(
+                        datetime.datetime.now().strftime("%H:%M:%S")
+                    )
+                )
+
+                # update the query size
+                query_size = update_query_size(query_size, -5)
+
+    # give user output
+    print(
+        "{}: All records download links successfully generated.".format(
+            datetime.datetime.now().strftime("%H:%M:%S")
+        )
+    )
+
+    # check if some of the links have already been downloaded
+    download_links_all_records = top_100_downloaded(
+        hdf_name_top_100_hits, hdf_name_download_links, database="all_records"
+    )
+
+    # continue to download the top 100 hits asynchronosly for species level
+    if not len(download_links_all_records.index) == 0:
+        asyncio.run(
+            as_session(download_links_all_records, "all_records", hdf_name_top_100_hits)
+        )
+
+    # give user output
+    print(
+        "{}: All records top 100 records successfully downloaded.".format(
+            datetime.datetime.now().strftime("%H:%M:%S")
+        )
+    )
+
 
 main(
-    "C:\\Users\\Dominik\\Documents\\GitHub\\BOLDigger2\\test_otus.fasta",
+    "C:\\Users\\Dominik\\Documents\\GitHub\\BOLDigger2\\test_otus_small.fasta",
     1,
 )
