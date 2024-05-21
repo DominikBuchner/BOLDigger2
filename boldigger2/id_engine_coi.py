@@ -1,7 +1,7 @@
 import datetime, sys, more_itertools, datetime, requests_html, asyncio
 import pandas as pd
 import numpy as np
-from boldigger2 import login
+from boldigger2 import login, additional_data_download
 from Bio import SeqIO
 from pathlib import Path
 from bs4 import BeautifulSoup as BSoup
@@ -595,6 +595,9 @@ def main(fasta_path):
             datetime.datetime.now().strftime("%H:%M:%S")
         )
     )
+
+    # download the additional data
+    additional_data_download.main(fasta_path, hdf_name_top_100_hits, read_fasta)
 
 
 # run only if called as a toplevel script
