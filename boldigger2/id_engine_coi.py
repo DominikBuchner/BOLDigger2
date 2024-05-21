@@ -283,8 +283,9 @@ async def as_request(species_id, url, as_session, database, hdf_name_top_100_hit
     # fill na values with empty strings to make frames compatible with hdf format
     result = result.fillna("")
 
-    # add the database to the result table
+    # add the database and a timestamp to the result table
     result["database"] = database
+    result["request_date"] = datetime.datetime.now()
 
     # add the results to the hdf storage
     # set size limits for the columns
@@ -300,6 +301,7 @@ async def as_request(species_id, url, as_session, database, hdf_name_top_100_hit
         "Status": 15,
         "Process_ID": 25,
         "database": 20,
+        "request_date": 30,
     }
 
     # append results to hdf
