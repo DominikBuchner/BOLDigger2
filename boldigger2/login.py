@@ -63,3 +63,7 @@ def bold_login():
         )
         # return the session if the login was successful to handle the requests
         return session
+
+
+if __name__ == "__main__":
+    bold_login()

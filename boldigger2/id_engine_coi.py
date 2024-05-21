@@ -1,6 +1,7 @@
-import datetime, sys, more_itertools, datetime, requests_html, asyncio, login
+import datetime, sys, more_itertools, datetime, requests_html, asyncio
 import pandas as pd
 import numpy as np
+from boldigger2 import login
 from Bio import SeqIO
 from pathlib import Path
 from bs4 import BeautifulSoup as BSoup
@@ -596,6 +597,6 @@ def main(fasta_path):
     )
 
 
-main(
-    "C:\\Users\\Dominik\\Documents\\GitHub\\BOLDigger2\\test_otus.fasta",
-)
+# run only if called as a toplevel script
+if __name__ == "__main__":
+    main()

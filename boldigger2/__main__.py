@@ -1,4 +1,5 @@
 import argparse, sys
+from boldigger2 import id_engine_coi
 
 
 # main function for the command line interface
@@ -24,7 +25,7 @@ def main():
 
     # add the only argument (fasta path)
     parser_identify.add_argument(
-        "fasta file",
+        "fasta_file",
         help="Path to the fasta file or fasta file in current working directory.",
     )
 
@@ -37,6 +38,13 @@ def main():
     # print help if no argument is provided
     if len(sys.argv) == 1:
         arguments.func(arguments)
+
+    # run the identification engine
+    if arguments.function == "identify":
+        id_engine_coi.main(arguments.fasta_file)
+
+    # run the GUI
+    # ----- TBD -----
 
 
 # run only if called as a top level script
