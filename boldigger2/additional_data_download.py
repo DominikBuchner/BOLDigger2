@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import more_itertools
 
 
 # function to sort the hdf dataframe according to the order in the fasta file
@@ -68,6 +69,22 @@ def read_and_order(fasta_path, hdf_name_top_100_hits, read_fasta):
     return top_100_hits, process_ids
 
 
+# function to return download links for the BOLD API from the process IDs
+def generate_download_links(process_ids):
+    # chunk the process IDs into batches of 100 ids
+    process_ids = more_itertools.chunked(process_ids, 100)
+
+    # join the download batches
+    download_batches = [
+        "http://www.boldsystems.org/index.php/API_Public/specimen?ids={}".format(
+            "|".join(process_ids_chunk)
+        )
+        for process_ids_chunk in process_ids
+    ]
+
+    return download_batches
+
+
 # main function to run the additional data download
 def main(fasta_path, hdf_name_top_100_hits, read_fasta):
     # read and sort the hdf file according to the order in the fasta file
@@ -76,7 +93,7 @@ def main(fasta_path, hdf_name_top_100_hits, read_fasta):
     )
 
     # generate download links for the process ids, fetch them with async session
-    print(process_ids)
+    download_batches = generate_download_links(process_ids)
 
 
 # run only if called as a toplevel script
