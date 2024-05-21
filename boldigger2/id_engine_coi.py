@@ -187,21 +187,6 @@ def update_query_size(query_size, increase):
 async def as_request(species_id, url, as_session, database, hdf_name_top_100_hits):
     # add all requests to the eventloop
     # request top 100 hits
-    if database == "species":
-        # give user output
-        tqdm.write(
-            "{}: Downloading top 100 species level records for {}".format(
-                datetime.datetime.now().strftime("%H:%M:%S"), species_id
-            )
-        )
-
-    else:
-        tqdm.write(
-            "{}: Downloading top 100 hits of all records for {}".format(
-                datetime.datetime.now().strftime("%H:%M:%S"), species_id
-            )
-        )
-
     response = await as_session.get("{}&display=100".format(url), timeout=60)
     # parse the response and pass it to pandas
     response = BSoup(response.text, "html5lib")
@@ -330,24 +315,36 @@ async def as_request(species_id, url, as_session, database, hdf_name_top_100_hit
             complevel=9,
         )
 
+    if database == "species":
+        # give user output
+        tqdm.write(
+            "{}: Downloaded top 100 species level records for {}".format(
+                datetime.datetime.now().strftime("%H:%M:%S"), species_id
+            )
+        )
 
-# set the concurrent download limit here
-# code has been timed to find the optimal download time
-sem = asyncio.Semaphore(6)
+    else:
+        tqdm.write(
+            "{}: Downloaded top 100 hits of all records for {}".format(
+                datetime.datetime.now().strftime("%H:%M:%S"), species_id
+            )
+        )
 
 
 # function to limit the maximum concurrent downloads
 async def limit_concurrency(
-    species_id, url, as_session, database, hdf_name_top_100_hits
+    species_id, url, as_session, database, hdf_name_top_100_hits, semaphore
 ):
-    async with sem:
+    async with semaphore:
         return await as_request(
             species_id, url, as_session, database, hdf_name_top_100_hits
         )
 
 
 # function to create the asynchronous session
-async def as_session(download_links_species, database, hdf_name_top_100_hits):
+async def as_session(
+    download_links_species, database, hdf_name_top_100_hits, semaphore
+):
     as_session = requests_html.AsyncHTMLSession()
     as_session.headers.update(
         {
@@ -366,12 +363,14 @@ async def as_session(download_links_species, database, hdf_name_top_100_hits):
     # create all requests
     tasks = download_links_species.copy()
     tasks = (
-        limit_concurrency(id, url, as_session, database, hdf_name_top_100_hits)
+        limit_concurrency(
+            id, url, as_session, database, hdf_name_top_100_hits, semaphore
+        )
         for id, url in zip(tasks["id"], tasks["url"])
     )
 
     # return the result
-    return await tqdm_asyncio.gather(*tasks)
+    return await tqdm_asyncio.gather(*tasks, desc="Downloading top 100 hits")
 
 
 # function to check of some of the top 100 hits have already been downloaded
@@ -430,9 +429,10 @@ def check_valid_species_records(fasta_dict, hdf_name_top_100_hits):
     return fasta_dict
 
 
-def main(fasta_path, query_size):
-    # log in to BOLD to generate the session
+def main(fasta_path):
+    # log in to BOLD to generate the session, initialize the query size
     session = login.bold_login()
+    query_size = 1
 
     # read the input fasta
     fasta_dict, fasta_name, project_directory = read_fasta(fasta_path)
@@ -451,31 +451,32 @@ def main(fasta_path, query_size):
     )
 
     # request the server until all links have been generated
-    with tqdm(total=len(fasta_dict), desc="Generating download links") as pbar:
-        while fasta_dict:
-            try:
-                fasta_dict = gather_download_links(
-                    session,
-                    fasta_dict,
-                    hdf_name_download_links,
-                    query_size,
-                    database="species",
-                )
-                # update the progress bar
-                pbar.update(query_size)
-                # update the query size by 5
-                query_size = update_query_size(query_size, 5)
-            except (ReadTimeout, ConnectionError):
-                # repeat if there is no response
-                # give user output
-                tqdm.write(
-                    "{}: BOLD did not respond. Retrying with reduced query size.".format(
-                        datetime.datetime.now().strftime("%H:%M:%S")
+    if fasta_dict:
+        with tqdm(total=len(fasta_dict), desc="Generating download links") as pbar:
+            while fasta_dict:
+                try:
+                    fasta_dict = gather_download_links(
+                        session,
+                        fasta_dict,
+                        hdf_name_download_links,
+                        query_size,
+                        database="species",
                     )
-                )
+                    # update the progress bar
+                    pbar.update(query_size)
+                    # update the query size by 5
+                    query_size = update_query_size(query_size, 5)
+                except (ReadTimeout, ConnectionError):
+                    # repeat if there is no response
+                    # give user output
+                    tqdm.write(
+                        "{}: BOLD did not respond. Retrying with reduced query size.".format(
+                            datetime.datetime.now().strftime("%H:%M:%S")
+                        )
+                    )
 
-                # update the query size
-                query_size = update_query_size(query_size, -5)
+                    # update the query size
+                    query_size = update_query_size(query_size, -5)
 
     # give user output
     print(
@@ -494,10 +495,16 @@ def main(fasta_path, query_size):
         hdf_name_top_100_hits, hdf_name_download_links, database="species"
     )
 
+    # set the concurrent download limit here
+    # code has been timed to find the optimal download time
+    sem = asyncio.Semaphore(6)
+
     # continue to download the top 100 hits asynchronosly for species level
     if not len(download_links_species.index) == 0:
         asyncio.run(
-            as_session(download_links_species, "species", hdf_name_top_100_hits)
+            as_session(
+                download_links_species, "species", hdf_name_top_100_hits, semaphore=sem
+            )
         )
 
     # give user output
@@ -516,7 +523,7 @@ def main(fasta_path, query_size):
     # gather download links at all barcode records level until all download links are requested
     # give user output
     print(
-        "{}: Starting to gather download links at from all records database.".format(
+        "{}: Starting to gather download links from the all records database.".format(
             datetime.datetime.now().strftime("%H:%M:%S")
         )
     )
@@ -527,31 +534,32 @@ def main(fasta_path, query_size):
     )
 
     # request the server until all links have been generated
-    with tqdm(total=len(fasta_dict), desc="Generating download links") as pbar:
-        while fasta_dict:
-            try:
-                fasta_dict = gather_download_links(
-                    session,
-                    fasta_dict,
-                    hdf_name_download_links,
-                    query_size,
-                    database="all_records",
-                )
-                # update the progress bar
-                pbar.update(query_size)
-                # update the query size by 5
-                query_size = update_query_size(query_size, 5)
-            except (ReadTimeout, ConnectionError):
-                # repeat if there is no response
-                # give user output
-                tqdm.write(
-                    "{}: BOLD did not respond. Retrying with reduced query size.".format(
-                        datetime.datetime.now().strftime("%H:%M:%S")
+    if fasta_dict:
+        with tqdm(total=len(fasta_dict), desc="Generating download links") as pbar:
+            while fasta_dict:
+                try:
+                    fasta_dict = gather_download_links(
+                        session,
+                        fasta_dict,
+                        hdf_name_download_links,
+                        query_size,
+                        database="all_records",
                     )
-                )
+                    # update the progress bar
+                    pbar.update(query_size)
+                    # update the query size by 5
+                    query_size = update_query_size(query_size, 5)
+                except (ReadTimeout, ConnectionError):
+                    # repeat if there is no response
+                    # give user output
+                    tqdm.write(
+                        "{}: BOLD did not respond. Retrying with reduced query size.".format(
+                            datetime.datetime.now().strftime("%H:%M:%S")
+                        )
+                    )
 
-                # update the query size
-                query_size = update_query_size(query_size, -5)
+                    # update the query size
+                    query_size = update_query_size(query_size, -5)
 
     # give user output
     print(
@@ -565,10 +573,19 @@ def main(fasta_path, query_size):
         hdf_name_top_100_hits, hdf_name_download_links, database="all_records"
     )
 
+    # set the concurrent download limit here
+    # code has been timed to find the optimal download time
+    sem = asyncio.Semaphore(6)
+
     # continue to download the top 100 hits asynchronosly for species level
     if not len(download_links_all_records.index) == 0:
         asyncio.run(
-            as_session(download_links_all_records, "all_records", hdf_name_top_100_hits)
+            as_session(
+                download_links_all_records,
+                "all_records",
+                hdf_name_top_100_hits,
+                semaphore=sem,
+            )
         )
 
     # give user output
@@ -580,6 +597,5 @@ def main(fasta_path, query_size):
 
 
 main(
-    "C:\\Users\\Dominik\\Documents\\GitHub\\BOLDigger2\\test_otus_small.fasta",
-    1,
+    "C:\\Users\\Dominik\\Documents\\GitHub\\BOLDigger2\\test_otus.fasta",
 )
