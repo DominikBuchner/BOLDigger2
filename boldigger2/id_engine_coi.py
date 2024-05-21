@@ -307,7 +307,7 @@ async def as_request(species_id, url, as_session, database, hdf_name_top_100_hit
         hdf_name_top_100_hits, mode="a", complib="blosc:blosclz", complevel=9
     ) as hdf_output:
         hdf_output.append(
-            "top_100_hits",
+            "top_100_hits_unsorted",
             result,
             format="t",
             data_columns=True,
@@ -382,7 +382,7 @@ def top_100_downloaded(hdf_name_top_100_hits, hdf_name_download_links, database)
     download_links = download_links.loc[download_links["database"] == database]
     try:
         # read already downloaded top 100 hits
-        top_100_hits = pd.read_hdf(hdf_name_top_100_hits)
+        top_100_hits = pd.read_hdf(hdf_name_top_100_hits, key="top_100_hits_unsorted")
         # only select the correct database
         top_100_hits = top_100_hits.loc[top_100_hits["database"] == database]
         # find all ids that already have been selected
@@ -402,7 +402,9 @@ def top_100_downloaded(hdf_name_top_100_hits, hdf_name_download_links, database)
 # be identified again
 def check_valid_species_records(fasta_dict, hdf_name_top_100_hits):
     # read the hdf
-    top_100_hits_species = pd.read_hdf(hdf_name_top_100_hits)
+    top_100_hits_species = pd.read_hdf(
+        hdf_name_top_100_hits, key="top_100_hits_unsorted"
+    )
     # filter for species level database only
     top_100_hits_species = top_100_hits_species.loc[
         top_100_hits_species["database"] == "species"
@@ -446,7 +448,7 @@ def main(fasta_path):
     # gather download links at species level until all download links are requested
     # give user output
     print(
-        "{}: Starting to gather download links at from species level database.".format(
+        "{}: Starting to gather download links from species level database.".format(
             datetime.datetime.now().strftime("%H:%M:%S")
         )
     )
@@ -578,7 +580,7 @@ def main(fasta_path):
     # code has been timed to find the optimal download time
     sem = asyncio.Semaphore(6)
 
-    # continue to download the top 100 hits asynchronosly for species level
+    # continue to download the top 100 hits asynchronosly for all records
     if not len(download_links_all_records.index) == 0:
         asyncio.run(
             as_session(
