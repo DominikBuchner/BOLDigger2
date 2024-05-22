@@ -1,4 +1,4 @@
-import more_itertools, asyncio, requests_html, datetime
+import more_itertools, asyncio, requests_html, datetime, sys
 import pandas as pd
 import numpy as np
 from xml.etree import ElementTree as ET
@@ -221,7 +221,7 @@ def add_additional_data(
     ]
 
     # concat the additional data and the top 100 hits to finalize the top 100 hits
-    top_100_hits = pd.concat([top_100_hits, additional_data], axis=1)
+    top_100_hits = pd.concat([top_100_hits, additional_data], axis=1).reset_index()
 
     # add the top 100 hits with additional data to the hdf storage
     # only have to write the results once
@@ -285,7 +285,7 @@ def main(fasta_path, hdf_name_top_100_hits, read_fasta):
 
     # request the data asynchronously
     # set the concurrent download limit here
-    sem = asyncio.Semaphore(2)
+    sem = asyncio.Semaphore(1)
 
     # start the download
     additional_data = asyncio.run(
