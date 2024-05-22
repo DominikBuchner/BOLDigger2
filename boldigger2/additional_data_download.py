@@ -4,6 +4,7 @@ import numpy as np
 from bs4 import BeautifulSoup as BSoup
 from io import StringIO
 import requests
+from xml.etree import ElementTree as ET
 
 
 # function to sort the hdf dataframe according to the order in the fasta file
@@ -88,6 +89,58 @@ def generate_download_links(process_ids):
     return download_batches
 
 
+# function to parse the xml returned by the BOLD api into a dataframe
+# of the required dimensions
+def xml_to_dataframe(xml_string):
+    # extract the root of the xml tree
+    root = ET.fromstring(xml_string)
+    records = root.findall("record")
+
+    # store data here, append data on the go
+    xml_dataframe = pd.DataFrame()
+
+    # add process id, record id, bin uri
+    for column_name in ["processid", "record_id", "bin_uri"]:
+        xml_dataframe[column_name] = [
+            (
+                record.find(column_name)
+                if record.find(column_name) == None
+                else record.find(column_name).text
+            )
+            for record in records
+        ]
+
+    # gather the remaining data from the API
+    # collect subheaders in a dict, and subelements as lists of the respective key
+    remaining_elements = {
+        "specimen_identifiers": ["institution_storing"],
+        "specimen_desc": ["sex", "lifestage"],
+        "collection_event": ["country"],
+        "taxonomy": ["identification_provided_by", "identification_method"],
+    }
+
+    for subheader in remaining_elements.keys():
+        # find the respective subheader in the xml
+        subheader_data = [record.find(subheader) for record in records]
+
+        # collect the respective subelements and push them into the xml dataframe
+        for column_name in remaining_elements[subheader]:
+            # extract the xml elements first
+            elements = [
+                record.find(column_name) if record != None else None
+                for record in subheader_data
+            ]
+            # dual loop to not loose the None values,to be able to append to dataframe
+            elements = [
+                element.text if element != None else None for element in elements
+            ]
+
+            xml_dataframe[column_name] = elements
+
+    # return the xml dataframe with None values replaced
+    return xml_dataframe.fillna(np.nan)
+
+
 # main function to run the additional data download
 def main(fasta_path, hdf_name_top_100_hits, read_fasta):
     # read and sort the hdf file according to the order in the fasta file
@@ -98,14 +151,7 @@ def main(fasta_path, hdf_name_top_100_hits, read_fasta):
     # generate download links for the process ids, fetch them with async session
     download_batches = generate_download_links(process_ids)
 
-    # request the data
-    r = requests.get(download_batches[0])
-
-    print(
-        pd.read_xml(
-            StringIO(r.text),
-        )
-    )
+    # request the data asynchronously
 
 
 # run only if called as a toplevel script
