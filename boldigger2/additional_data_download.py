@@ -1,10 +1,10 @@
-import more_itertools
+import more_itertools, asyncio, requests_html, datetime
 import pandas as pd
 import numpy as np
-from bs4 import BeautifulSoup as BSoup
-from io import StringIO
-import requests
 from xml.etree import ElementTree as ET
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+from tqdm.asyncio import tqdm_asyncio
 
 
 # function to sort the hdf dataframe according to the order in the fasta file
@@ -141,17 +141,104 @@ def xml_to_dataframe(xml_string):
     return xml_dataframe.fillna(np.nan)
 
 
+# asynchronous request code to send n requests at once
+async def as_request(url, as_session):
+    # request the api
+    response = await as_session.get(url, timeout=60)
+
+    # parse the response
+    xml_dataframe = xml_to_dataframe(response.text)
+
+    return xml_dataframe
+
+
+# function to limit the maximum concurrent downloads
+async def limit_concurrency(url, as_session, semaphore):
+    async with semaphore:
+        return await as_request(url, as_session)
+
+
+# function to create the asynchronous session
+async def as_session(download_links, semaphore):
+    as_session = requests_html.AsyncHTMLSession()
+    as_session.headers.update(
+        {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.82 Safari/537.36"
+        }
+    )
+    retry_strategy = Retry(
+        total=15,
+        status_forcelist=[400, 401, 403, 404, 413, 429, 502, 503, 504],
+        backoff_factor=1,
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    as_session.mount("https://", adapter)
+    as_session.mount("http://", adapter)
+
+    # generate the tasks to perform
+    tasks = (limit_concurrency(url, as_session, semaphore) for url in download_links)
+
+    # return the result
+    return await tqdm_asyncio.gather(*tasks, desc="Downloading additional data")
+
+
+# function to add the additional data to the top 100 hits
+def add_additional_data(
+    hdf_name_top_100_hits, top_100_hits, process_ids, additional_data
+):
+    # concat the additional data downloaded
+    additional_data = pd.concat(additional_data, axis=0).rename(
+        columns={"processid": "Process_ID"}
+    )
+
+    # merge the process ids and the additional data on the id column
+    process_ids = process_ids.to_frame()
+
+    # merge the process ids and the additional data on the index column, retain the index of the the process ids
+    additional_data = (
+        process_ids.reset_index()
+        .merge(additional_data, how="inner", on="Process_ID")
+        .set_index("index")
+    )
+    print(additional_data)
+
+
 # main function to run the additional data download
 def main(fasta_path, hdf_name_top_100_hits, read_fasta):
+    # give user output
+    print(
+        "{}: Ordering top 100 hits.".format(
+            datetime.datetime.now().strftime("%H:%M:%S")
+        )
+    )
+
     # read and sort the hdf file according to the order in the fasta file
     top_100_hits, process_ids = read_and_order(
         fasta_path, hdf_name_top_100_hits, read_fasta
+    )
+    # give user output
+    print(
+        "{}: Generating download links for additional data.".format(
+            datetime.datetime.now().strftime("%H:%M:%S")
+        )
     )
 
     # generate download links for the process ids, fetch them with async session
     download_batches = generate_download_links(process_ids)
 
     # request the data asynchronously
+    # set the concurrent download limit here
+    sem = asyncio.Semaphore(10)
+
+    # start the download
+    additional_data = asyncio.run(
+        as_session(download_links=download_batches, semaphore=sem)
+    )
+
+    # add the metadata to the top 100 hits, push to a new hdf table
+    add_additional_data(
+        hdf_name_top_100_hits, top_100_hits, process_ids, additional_data
+    )
 
 
 # run only if called as a toplevel script

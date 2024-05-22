@@ -600,7 +600,7 @@ def main(fasta_path):
         )
     )
 
-    # download the additional data
+    # download the additional data if it is not present yet
     additional_data_download.main(fasta_path, hdf_name_top_100_hits, read_fasta)
 
 
