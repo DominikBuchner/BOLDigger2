@@ -285,7 +285,7 @@ async def as_request(species_id, url, as_session, database, hdf_name_top_100_hit
 
     # add the database and a timestamp to the result table
     result["database"] = database
-    result["request_date"] = datetime.datetime.now()
+    result["request_date"] = pd.Timestamp.now().strftime("%Y-%m-%d %X")
 
     # add the results to the hdf storage
     # set size limits for the columns

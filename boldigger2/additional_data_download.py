@@ -1,6 +1,9 @@
+import more_itertools
 import pandas as pd
 import numpy as np
-import more_itertools
+from bs4 import BeautifulSoup as BSoup
+from io import StringIO
+import requests
 
 
 # function to sort the hdf dataframe according to the order in the fasta file
@@ -30,7 +33,6 @@ def read_and_order(fasta_path, hdf_name_top_100_hits, read_fasta):
         .reset_index(drop=True)
     )
 
-    top_100_hits.to_excel("test4.xlsx")
     # override the hdf file with the new, sorted dataframe
     # add the results to the hdf storage
     # set size limits for the columns
@@ -46,6 +48,7 @@ def read_and_order(fasta_path, hdf_name_top_100_hits, read_fasta):
         "Status": 15,
         "Process_ID": 25,
         "database": 20,
+        "request_date": 30,
     }
 
     # append results to hdf
@@ -94,6 +97,15 @@ def main(fasta_path, hdf_name_top_100_hits, read_fasta):
 
     # generate download links for the process ids, fetch them with async session
     download_batches = generate_download_links(process_ids)
+
+    # request the data
+    r = requests.get(download_batches[0])
+
+    print(
+        pd.read_xml(
+            StringIO(r.text),
+        )
+    )
 
 
 # run only if called as a toplevel script
