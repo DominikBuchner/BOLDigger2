@@ -200,7 +200,13 @@ def add_additional_data(
         .merge(additional_data, how="inner", on="Process_ID")
         .set_index("index")
     )
-    print(additional_data)
+
+    # remove the index name
+    additional_data.index.name = None
+
+    # concat the additional data and the top 100 hits to finalize the top 100 hits
+    top_100_hits = pd.concat([top_100_hits, additional_data], axis=1)
+    print(top_100_hits)
 
 
 # main function to run the additional data download
