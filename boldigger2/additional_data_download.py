@@ -5,6 +5,7 @@ from xml.etree import ElementTree as ET
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from tqdm.asyncio import tqdm_asyncio
+from pathlib import Path
 
 
 # function to sort the hdf dataframe according to the order in the fasta file
@@ -52,19 +53,23 @@ def read_and_order(fasta_path, hdf_name_top_100_hits, read_fasta):
         "request_date": 30,
     }
 
-    # append results to hdf
-    with pd.HDFStore(
-        hdf_name_top_100_hits, mode="a", complib="blosc:blosclz", complevel=9
-    ) as hdf_output:
-        hdf_output.append(
-            "top_100_hits_sorted",
-            top_100_hits,
-            format="t",
-            data_columns=True,
-            min_itemsize=item_sizes,
-            complib="blosc:blosclz",
-            complevel=9,
-        )
+    # only have to write the results once
+    try:
+        pd.read_hdf(hdf_name_top_100_hits, key="top_100_hits_sorted")
+    except KeyError:
+        # append results to hdf
+        with pd.HDFStore(
+            hdf_name_top_100_hits, mode="a", complib="blosc:blosclz", complevel=9
+        ) as hdf_output:
+            hdf_output.append(
+                "top_100_hits_sorted",
+                top_100_hits,
+                format="t",
+                data_columns=True,
+                min_itemsize=item_sizes,
+                complib="blosc:blosclz",
+                complevel=9,
+            )
 
     # drop process IDs that are empty
     process_ids = top_100_hits["Process_ID"].replace("", np.nan).dropna()
@@ -204,9 +209,55 @@ def add_additional_data(
     # remove the index name
     additional_data.index.name = None
 
+    # remove Process IDs, are already in the top 100 hits
+    additional_data = additional_data.drop("Process_ID", axis=1)
+
+    # add specimen page links
+    additional_data["specimen_page_url"] = [
+        "http://www.boldsystems.org/index.php/MAS_DataRetrieval_OpenSpecimen?selectedrecordid={}".format(
+            record_id
+        )
+        for record_id in additional_data["record_id"]
+    ]
+
     # concat the additional data and the top 100 hits to finalize the top 100 hits
     top_100_hits = pd.concat([top_100_hits, additional_data], axis=1)
-    print(top_100_hits)
+
+    # add the top 100 hits with additional data to the hdf storage
+    # only have to write the results once
+    # in this case we can infer the size of the columns since we won't append to this file anymore
+    try:
+        pd.read_hdf(hdf_name_top_100_hits, key="top_100_hits_additional_data")
+    except KeyError:
+        # append results to hdf
+        with pd.HDFStore(
+            hdf_name_top_100_hits, mode="a", complib="blosc:blosclz", complevel=9
+        ) as hdf_output:
+            hdf_output.append(
+                "top_100_hits_additional_data",
+                top_100_hits,
+                format="t",
+                data_columns=True,
+                complib="blosc:blosclz",
+                complevel=9,
+            )
+
+
+def excel_converter(hdf_name_top_100_hits):
+    top_100_hits = pd.read_hdf(
+        hdf_name_top_100_hits, key="top_100_hits_additional_data"
+    )
+
+    # split the dataframe by 1.000.000 entries
+    idx_parts = more_itertools.chunked(top_100_hits.index, 1000000)
+    # idx_limits = [[idx_part[0], idx_part[-1]] for idx_part in idx_parts]
+
+    # generate an excel savename
+    excel_savename = Path(hdf_name_top_100_hits).with_suffix("").with_suffix("")
+
+    for idx, idx_part in enumerate(idx_parts):
+        excel_savename = "{}_part_{}.xlsx".format(excel_savename, idx)
+        top_100_hits.iloc[idx_part].to_excel(excel_savename, index=False)
 
 
 # main function to run the additional data download
@@ -234,7 +285,7 @@ def main(fasta_path, hdf_name_top_100_hits, read_fasta):
 
     # request the data asynchronously
     # set the concurrent download limit here
-    sem = asyncio.Semaphore(10)
+    sem = asyncio.Semaphore(2)
 
     # start the download
     additional_data = asyncio.run(
@@ -242,9 +293,25 @@ def main(fasta_path, hdf_name_top_100_hits, read_fasta):
     )
 
     # add the metadata to the top 100 hits, push to a new hdf table
-    add_additional_data(
+    top_100_hits = add_additional_data(
         hdf_name_top_100_hits, top_100_hits, process_ids, additional_data
     )
+
+    # give user output
+    print(
+        "{}: Additional data successfully downloaded and saved.".format(
+            datetime.datetime.now().strftime("%H:%M:%S")
+        )
+    )
+
+    print(
+        "{}: Saving top 100 hits to excel, this may take a while.".format(
+            datetime.datetime.now().strftime("%H:%M:%S")
+        )
+    )
+
+    # run the excel converter in the end
+    excel_converter(hdf_name_top_100_hits)
 
 
 # run only if called as a toplevel script
