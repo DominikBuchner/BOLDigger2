@@ -142,8 +142,8 @@ def xml_to_dataframe(xml_string):
 
             xml_dataframe[column_name] = elements
 
-    # return the xml dataframe with None values replaced
-    return xml_dataframe.fillna(np.nan)
+    # return the xml dataframe
+    return xml_dataframe
 
 
 # asynchronous request code to send n requests at once
@@ -221,7 +221,9 @@ def add_additional_data(
     ]
 
     # concat the additional data and the top 100 hits to finalize the top 100 hits
-    top_100_hits = pd.concat([top_100_hits, additional_data], axis=1).reset_index()
+    top_100_hits = pd.concat(
+        [top_100_hits.reset_index(drop=True), additional_data], axis=1
+    ).fillna(np.nan)
 
     # add the top 100 hits with additional data to the hdf storage
     # only have to write the results once
@@ -312,6 +314,12 @@ def main(fasta_path, hdf_name_top_100_hits, read_fasta):
 
     # run the excel converter in the end
     excel_converter(hdf_name_top_100_hits)
+
+    ## TODO ##
+    # remove duplicates for API calling if that helps
+    # fix concat function
+    # replace all none values at once instead of for each individual response
+    # add a delay for the requests to not overflow the API
 
 
 # run only if called as a toplevel script
