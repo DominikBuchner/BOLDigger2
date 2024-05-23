@@ -1,4 +1,4 @@
-import more_itertools, asyncio, requests_html, datetime, sys
+import more_itertools, asyncio, requests_html, datetime, time
 import pandas as pd
 import numpy as np
 from xml.etree import ElementTree as ET
@@ -6,6 +6,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from tqdm.asyncio import tqdm_asyncio
 from pathlib import Path
+from tqdm import tqdm
 
 
 # function to sort the hdf dataframe according to the order in the fasta file
@@ -148,11 +149,26 @@ def xml_to_dataframe(xml_string):
 
 # asynchronous request code to send n requests at once
 async def as_request(url, as_session):
-    # request the api
-    response = await as_session.get(url, timeout=60)
+    while True:
+        try:
+            # request the api
+            response = await as_session.get(url, timeout=60)
 
-    # parse the response
-    xml_dataframe = xml_to_dataframe(response.text)
+            # wait a few seconds to not overload the API
+            time.sleep(5)
+
+            xml_dataframe = xml_to_dataframe(response.text)
+            break
+        except ET.ParseError:
+            # give user output
+            tqdm.write(
+                "{}: BOLD API overloaded. Waiting a few minutes.".format(
+                    datetime.datetime.now().strftime("%H:%M:%S")
+                )
+            )
+
+            time.sleep(600)
+            continue
 
     return xml_dataframe
 
@@ -220,10 +236,16 @@ def add_additional_data(
         for record_id in additional_data["record_id"]
     ]
 
+    # merge the additional data and the top 100 hits on index
+    top_100_hits = top_100_hits.merge(
+        right=additional_data, how="left", left_index=True, right_index=True
+    )
+    top_100_hits.to_excel("test.xlsx")
+
     # concat the additional data and the top 100 hits to finalize the top 100 hits
-    top_100_hits = pd.concat(
-        [top_100_hits.reset_index(drop=True), additional_data], axis=1
-    ).fillna(np.nan)
+    # top_100_hits = pd.concat(
+    #     [top_100_hits.reset_index(drop=True), additional_data], axis=1
+    # ).fillna(np.nan)
 
     # add the top 100 hits with additional data to the hdf storage
     # only have to write the results once
@@ -275,6 +297,7 @@ def main(fasta_path, hdf_name_top_100_hits, read_fasta):
     top_100_hits, process_ids = read_and_order(
         fasta_path, hdf_name_top_100_hits, read_fasta
     )
+
     # give user output
     print(
         "{}: Generating download links for additional data.".format(
@@ -317,9 +340,8 @@ def main(fasta_path, hdf_name_top_100_hits, read_fasta):
 
     ## TODO ##
     # remove duplicates for API calling if that helps
-    # fix concat function
-    # replace all none values at once instead of for each individual response
-    # add a delay for the requests to not overflow the API
+    # fix concat function --> maybe merge?
+    # adda check if the additional data has been downloaded
 
 
 # run only if called as a toplevel script
