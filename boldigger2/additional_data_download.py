@@ -81,8 +81,8 @@ def read_and_order(fasta_path, hdf_name_top_100_hits, read_fasta):
 
 # function to return download links for the BOLD API from the process IDs
 def generate_download_links(process_ids):
-    # chunk the process IDs into batches of 100 ids
-    process_ids = more_itertools.chunked(process_ids, 100)
+    # chunk the process IDs into batches of 100 ids remove duplicates, since we only need to query everything once
+    process_ids = more_itertools.chunked(process_ids.unique(), 100)
 
     # join the download batches
     download_batches = [
@@ -208,10 +208,21 @@ def add_additional_data(
     hdf_name_top_100_hits, top_100_hits, process_ids, additional_data
 ):
     # concat the additional data downloaded
-    additional_data = pd.concat(additional_data, axis=0).rename(
-        columns={"processid": "Process_ID"}
-    )
+    additional_data = pd.concat(additional_data, axis=0).reset_index(drop=True)
 
+    # transform additional data to dict
+    additional_data = additional_data.to_dict("tight")["data"]
+
+    return None
+
+    # drop the process ID column
+    additional_data = additional_data.drop(labels=["processid"], axis=1)
+
+    # set the index of the additional data to match the top 100 hits
+    additional_data.index = process_ids.index
+
+    print(additional_data)
+    return None
     # merge the process ids and the additional data on the id column
     process_ids = process_ids.to_frame()
 
@@ -236,16 +247,13 @@ def add_additional_data(
         for record_id in additional_data["record_id"]
     ]
 
+    top_100_hits.to_excel("test1.xlsx")
+    additional_data.to_excel("test2.xlsx")
+
     # merge the additional data and the top 100 hits on index
     top_100_hits = top_100_hits.merge(
         right=additional_data, how="left", left_index=True, right_index=True
     )
-    top_100_hits.to_excel("test.xlsx")
-
-    # concat the additional data and the top 100 hits to finalize the top 100 hits
-    # top_100_hits = pd.concat(
-    #     [top_100_hits.reset_index(drop=True), additional_data], axis=1
-    # ).fillna(np.nan)
 
     # add the top 100 hits with additional data to the hdf storage
     # only have to write the results once
