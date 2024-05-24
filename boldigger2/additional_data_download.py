@@ -154,9 +154,6 @@ async def as_request(url, as_session):
             # request the api
             response = await as_session.get(url, timeout=60)
 
-            # wait a few seconds to not overload the API
-            time.sleep(5)
-
             xml_dataframe = xml_to_dataframe(response.text)
             break
         except ET.ParseError:
@@ -210,34 +207,21 @@ def add_additional_data(
     # concat the additional data downloaded
     additional_data = pd.concat(additional_data, axis=0).reset_index(drop=True)
 
-    # transform additional data to dict
-    additional_data = additional_data.to_dict("tight")["data"]
+    # transform additional data to dict, retain the column names
+    additional_data = additional_data.to_dict("tight")
+    column_names = additional_data["columns"][1:]
+    additional_data = additional_data["data"]
 
-    return None
+    # parse the additional data into a dict in the form of process_id : [data fields] to rebuild the dataframe
+    additional_data = [(record[0], record[1:]) for record in additional_data]
+    additional_data = {record: data for record, data in additional_data}
 
-    # drop the process ID column
-    additional_data = additional_data.drop(labels=["processid"], axis=1)
-
-    # set the index of the additional data to match the top 100 hits
-    additional_data.index = process_ids.index
-
-    print(additional_data)
-    return None
-    # merge the process ids and the additional data on the id column
-    process_ids = process_ids.to_frame()
-
-    # merge the process ids and the additional data on the index column, retain the index of the the process ids
-    additional_data = (
-        process_ids.reset_index()
-        .merge(additional_data, how="inner", on="Process_ID")
-        .set_index("index")
+    # recreate to dataframe with duplicate values
+    additional_data = pd.DataFrame(
+        data=[additional_data[record] for record in process_ids],
+        columns=column_names,
+        index=process_ids.index,
     )
-
-    # remove the index name
-    additional_data.index.name = None
-
-    # remove Process IDs, are already in the top 100 hits
-    additional_data = additional_data.drop("Process_ID", axis=1)
 
     # add specimen page links
     additional_data["specimen_page_url"] = [
@@ -247,13 +231,8 @@ def add_additional_data(
         for record_id in additional_data["record_id"]
     ]
 
-    top_100_hits.to_excel("test1.xlsx")
-    additional_data.to_excel("test2.xlsx")
-
     # merge the additional data and the top 100 hits on index
-    top_100_hits = top_100_hits.merge(
-        right=additional_data, how="left", left_index=True, right_index=True
-    )
+    top_100_hits = pd.concat([top_100_hits, additional_data], axis=1)
 
     # add the top 100 hits with additional data to the hdf storage
     # only have to write the results once
@@ -282,7 +261,6 @@ def excel_converter(hdf_name_top_100_hits):
 
     # split the dataframe by 1.000.000 entries
     idx_parts = more_itertools.chunked(top_100_hits.index, 1000000)
-    # idx_limits = [[idx_part[0], idx_part[-1]] for idx_part in idx_parts]
 
     # generate an excel savename
     excel_savename = Path(hdf_name_top_100_hits).with_suffix("").with_suffix("")
@@ -347,8 +325,6 @@ def main(fasta_path, hdf_name_top_100_hits, read_fasta):
     excel_converter(hdf_name_top_100_hits)
 
     ## TODO ##
-    # remove duplicates for API calling if that helps
-    # fix concat function --> maybe merge?
     # adda check if the additional data has been downloaded
 
 
