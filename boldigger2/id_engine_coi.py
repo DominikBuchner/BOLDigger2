@@ -1,7 +1,7 @@
 import datetime, sys, more_itertools, datetime, requests_html, asyncio
 import pandas as pd
 import numpy as np
-from boldigger2 import login, additional_data_download
+from boldigger2 import login, additional_data_download, digger_hit
 from Bio import SeqIO
 from pathlib import Path
 from bs4 import BeautifulSoup as BSoup
@@ -197,7 +197,7 @@ async def as_request(species_id, url, as_session, database, hdf_name_top_100_hit
 
     if len(broken_record) == 1:
         result = pd.DataFrame(
-            [[species_id] + ["Broken record"] * 7 + [0.0] + [""] * 2],
+            [[species_id] + ["BrokenRecord"] * 7 + [0.0] + [""] * 2],
             columns=[
                 "ID",
                 "Phylum",
@@ -224,7 +224,7 @@ async def as_request(species_id, url, as_session, database, hdf_name_top_100_hit
     # code to generate the no match table
     if len(response_table) == 2:
         result = pd.DataFrame(
-            [[species_id] + ["No Match"] * 7 + [0.0] + [""] * 2],
+            [[species_id] + ["NoMatch"] * 7 + [0.0] + [""] * 2],
             columns=[
                 "ID",
                 "Phylum",
@@ -602,6 +602,9 @@ def main(fasta_path):
 
     # download the additional data if it is not present yet
     additional_data_download.main(fasta_path, hdf_name_top_100_hits, read_fasta)
+
+    # filter for the top hits
+    digger_hit.main(hdf_name_top_100_hits)
 
 
 # run only if called as a toplevel script
