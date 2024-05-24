@@ -235,23 +235,18 @@ def add_additional_data(
     top_100_hits = pd.concat([top_100_hits, additional_data], axis=1)
 
     # add the top 100 hits with additional data to the hdf storage
-    # only have to write the results once
     # in this case we can infer the size of the columns since we won't append to this file anymore
-    try:
-        pd.read_hdf(hdf_name_top_100_hits, key="top_100_hits_additional_data")
-    except KeyError:
-        # append results to hdf
-        with pd.HDFStore(
-            hdf_name_top_100_hits, mode="a", complib="blosc:blosclz", complevel=9
-        ) as hdf_output:
-            hdf_output.append(
-                "top_100_hits_additional_data",
-                top_100_hits,
-                format="t",
-                data_columns=True,
-                complib="blosc:blosclz",
-                complevel=9,
-            )
+    with pd.HDFStore(
+        hdf_name_top_100_hits, mode="a", complib="blosc:blosclz", complevel=9
+    ) as hdf_output:
+        hdf_output.append(
+            "top_100_hits_additional_data",
+            top_100_hits,
+            format="t",
+            data_columns=True,
+            complib="blosc:blosclz",
+            complevel=9,
+        )
 
 
 def excel_converter(hdf_name_top_100_hits):
@@ -268,6 +263,24 @@ def excel_converter(hdf_name_top_100_hits):
     for idx, idx_part in enumerate(idx_parts):
         excel_savename = "{}_part_{}.xlsx".format(excel_savename, idx)
         top_100_hits.iloc[idx_part].to_excel(excel_savename, index=False)
+
+
+# function to check if the additional data has already been downloaded
+# download can be skipped if that is the case --> returns True
+def additional_data_present(hdf_name_top_100_hits):
+    try:
+        pd.read_hdf(hdf_name_top_100_hits, key="top_100_hits_additional_data")
+        # give user output
+        print(
+            "{}: Additional data has already been downloaded.".format(
+                datetime.datetime.now().strftime("%H:%M:%S")
+            )
+        )
+
+        return True
+    except KeyError:
+        # if no additional data can be found return False
+        return False
 
 
 # main function to run the additional data download
@@ -296,36 +309,35 @@ def main(fasta_path, hdf_name_top_100_hits, read_fasta):
 
     # request the data asynchronously
     # set the concurrent download limit here
-    sem = asyncio.Semaphore(1)
+    sem = asyncio.Semaphore(10)
 
-    # start the download
-    additional_data = asyncio.run(
-        as_session(download_links=download_batches, semaphore=sem)
-    )
-
-    # add the metadata to the top 100 hits, push to a new hdf table
-    top_100_hits = add_additional_data(
-        hdf_name_top_100_hits, top_100_hits, process_ids, additional_data
-    )
-
-    # give user output
-    print(
-        "{}: Additional data successfully downloaded and saved.".format(
-            datetime.datetime.now().strftime("%H:%M:%S")
+    # skip the download if the data is already present
+    if not additional_data_present(hdf_name_top_100_hits):
+        # start the download
+        additional_data = asyncio.run(
+            as_session(download_links=download_batches, semaphore=sem)
         )
-    )
 
-    print(
-        "{}: Saving top 100 hits to excel, this may take a while.".format(
-            datetime.datetime.now().strftime("%H:%M:%S")
+        # add the metadata to the top 100 hits, push to a new hdf table
+        top_100_hits = add_additional_data(
+            hdf_name_top_100_hits, top_100_hits, process_ids, additional_data
         )
-    )
 
-    # run the excel converter in the end
-    excel_converter(hdf_name_top_100_hits)
+        # give user output
+        print(
+            "{}: Additional data successfully downloaded and saved.".format(
+                datetime.datetime.now().strftime("%H:%M:%S")
+            )
+        )
 
-    ## TODO ##
-    # adda check if the additional data has been downloaded
+        print(
+            "{}: Saving top 100 hits to excel, this may take a while.".format(
+                datetime.datetime.now().strftime("%H:%M:%S")
+            )
+        )
+
+        # run the excel converter in the end
+        excel_converter(hdf_name_top_100_hits)
 
 
 # run only if called as a toplevel script
