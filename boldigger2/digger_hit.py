@@ -153,37 +153,37 @@ def find_top_hit(top_100_hits, idx):
         ]
 
         # define the levels for the groupby. care about the selector string later
-        levels = ["Phylum", "Class", "Order", "Family", "Genus", "Species"]
-        levels = levels[: levels.index(level) + 1]
+        all_levels = ["Phylum", "Class", "Order", "Family", "Genus", "Species"]
+        levels = all_levels[: all_levels.index(level) + 1]
 
         # drop na values at the respective level, replace the placeholder first, then put the placeholder back in place
         with pd.option_context("future.no_silent_downcasting", True):
-            hits_for_id_above_similarity = (
+            check_na_values = (
                 hits_for_id_above_similarity.replace("placeholder", np.nan)
                 .dropna(subset=levels)
                 .fillna("placeholder")
             )
 
-        # group the hits by level and then count the appearence
-        hits_for_id_above_similarity = pd.DataFrame(
-            {
-                "count": hits_for_id_above_similarity.groupby(
-                    levels,
-                    sort=False,
-                ).size()
-            }
-        ).reset_index()
-
-        # sort the hits by count
-        hits_for_id_above_similarity = hits_for_id_above_similarity.sort_values(
-            "count", ascending=False
-        )
-
         # if no hit remains move up one level until class
-        if len(hits_for_id_above_similarity.index) == 0:
+        if len(check_na_values.index) == 0:
             threshold, level = move_threshold_up(threshold)
             continue
         else:
+            # group the hits by level and then count the appearence
+            hits_for_id_above_similarity = pd.DataFrame(
+                {
+                    "count": hits_for_id_above_similarity.groupby(
+                        by=levels,
+                        sort=False,
+                    ).size()
+                }
+            ).reset_index()
+
+            # sort the hits by count
+            hits_for_id_above_similarity = hits_for_id_above_similarity.sort_values(
+                "count", ascending=False
+            )
+
             # select the hit with the highest count from the dataframe
             # also return the count to display in the top hit table in the end
             top_hits, top_count = (
