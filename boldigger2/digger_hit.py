@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-import datetime, psutil
+import datetime, psutil, sys
 from tqdm import tqdm
 from string import punctuation, digits
 from joblib import Parallel, delayed
@@ -137,7 +137,7 @@ def find_top_hit(top_100_hits, idx):
                 "Status",
             ]
         ]
-        for value in ["# records", "BIN", "flags", "Status"]:
+        for value in ["records", "BIN", "flags", "Status"]:
             return_value[value] = np.nan
 
         return return_value
@@ -183,7 +183,7 @@ def find_top_hit(top_100_hits, idx):
             # also return the count to display in the top hit table in the end
             top_hits, top_count = (
                 hits_for_id_above_similarity.head(1),
-                hits_for_id_above_similarity.head(1)["count"],
+                hits_for_id_above_similarity.head(1)["count"].item(),
             )
             top_hits = hits_for_id.query(
                 "Class == '{}' and Order == '{}' and Family == '{}' and Genus == '{}' and Species == '{}'".format(
@@ -198,6 +198,7 @@ def find_top_hit(top_100_hits, idx):
             # replace the placeholder again to perform subsequent filtering
             with pd.option_context("future.no_silent_downcasting", True):
                 top_hits = top_hits.replace("placeholder", np.nan)
+
             # collect the bins from the selected top hit
             top_hit_bins = top_hits["bin_uri"].dropna().unique()
 
@@ -205,7 +206,7 @@ def find_top_hit(top_100_hits, idx):
         top_hit = top_hits.head(1).copy()
 
         # add the record count to the top hit
-        top_hit["# records"] = top_count
+        top_hit["records"] = top_count
 
         # add the BINs to the top hit
         top_hit["BIN"] = ";".join(top_hit_bins)
@@ -238,7 +239,7 @@ def find_top_hit(top_100_hits, idx):
             "Species",
             "Similarity",
             "Status",
-            "# records",
+            "records",
             "BIN",
             "flags",
         ]
@@ -264,7 +265,7 @@ def main(hdf_name_top_100):
     with tqdm_joblib(
         desc="Calculating top hits", total=len(top_100_hits["ID"].unique())
     ) as progress_bar:
-        all_top_hits = Parallel(n_jobs=psutil.cpu_count())(
+        all_top_hits_and_counts = Parallel(n_jobs=  # psutil.cpu_count())(
             delayed(find_top_hit)(top_100_hits, idx)
             for idx in top_100_hits["ID"].unique()
         )
