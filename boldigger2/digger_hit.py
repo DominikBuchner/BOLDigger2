@@ -1,8 +1,10 @@
 import pandas as pd
 import numpy as np
-import datetime
+import datetime, psutil
 from tqdm import tqdm
 from string import punctuation, digits
+from joblib import Parallel, delayed
+from tqdm_joblib import tqdm_joblib
 
 
 # funnction to read the sorted top 100 hits including additional data
@@ -10,10 +12,7 @@ from string import punctuation, digits
 # only keep the first name of the species column
 def read_clean_data(hdf_name_top_100):
     # read the data
-    # top_100_hits = pd.read_hdf(hdf_name_top_100, key="top_100_hits_additional_data")
-    top_100_hits = pd.read_excel(
-        "C:\\Users\\Dominik\\Documents\\GitHub\\BOLDigger2\\test_otus_top_100_hits_part_0.xlsx"
-    )
+    top_100_hits = pd.read_hdf(hdf_name_top_100, key="top_100_hits_additional_data")
 
     # remove punctuationa and numbers from the taxonomy
     specials = punctuation + digits
@@ -47,7 +46,7 @@ def get_threshold(hit_for_id):
     else:
         # move through the taxonomy if it is no nomatch hit or broken record
         if threshold >= 97:
-            return 98, "Species"
+            return 97, "Species"
         elif threshold >= 95:
             return 95, "Genus"
         elif threshold >= 90:
@@ -60,12 +59,49 @@ def get_threshold(hit_for_id):
 
 ## function to move the treshold one level up if no hit is found, also return the new tax level
 def move_threshold_up(threshold):
-    thresholds = [98, 95, 90, 85, 50]
+    thresholds = [97, 95, 90, 85, 50]
     levels = ["Species", "Genus", "Family", "Order", "Class"]
     return (
         thresholds[thresholds.index(threshold) + 1],
         levels[thresholds.index(threshold) + 1],
     )
+
+
+# function to flag the hits
+def flag_hits(top_hits, hits_for_id_above_similarity, top_hit):
+    # predefine the flags to return
+    flags = [False, False, False, False, False]
+
+    # flag 1: Reverse BIN taxonomy
+    id_method = top_hits["identification_method"]
+
+    if (
+        id_method.str.startswith("BOLD").any()
+        or id_method.str.startswith("ID").any()
+        or id_method.str.startswith("Tree").any()
+    ):
+        flags[0] = "1"
+
+    # flag 2: more than one group above the selected threshold
+    if len(hits_for_id_above_similarity.index) > 1:
+        flags[1] = "2"
+
+    # flag 3: all of the selected top hits are private or early release
+    if top_hits["Status"].isin(["Private", "Early-Release"]).all():
+        flags[2] = "3"
+
+    # flag 4: top hit is only represented by one record
+    if len(top_hits.index) == 1:
+        flags[3] = "4"
+
+    # flag 5: top hit is represented by multiple bins
+    if len(top_hit["BIN"].str.split(";").item()) > 1:
+        flags[4] = "5"
+
+    flags = [i for i in flags if i]
+    flags = "-".join(flags)
+
+    return flags
 
 
 # function to find the top hit for a given ID
@@ -84,9 +120,27 @@ def find_top_hit(top_100_hits, idx):
     # if NoMatch return the NoMatch, if broken record return BrokenRecord
     if threshold == 0:
         if level == "NoMatch":
-            return hits_for_id.query("Species == 'NoMatch'").head(1)
+            return_value = hits_for_id.query("Species == 'NoMatch'").head(1)
         elif level == "BrokenRecord":
-            return hits_for_id.query("Species == 'BrokenRecord'").head(1)
+            return_value = hits_for_id.query("Species == 'BrokenRecord'").head(1)
+
+        return_value = return_value[
+            [
+                "ID",
+                "Phylum",
+                "Class",
+                "Order",
+                "Family",
+                "Genus",
+                "Species",
+                "Similarity",
+                "Status",
+            ]
+        ]
+        for value in ["# records", "BIN", "flags", "Status"]:
+            return_value[value] = np.nan
+
+        return return_value
 
     # loop through the thresholds until a hit is found
     while True:
@@ -127,22 +181,71 @@ def find_top_hit(top_100_hits, idx):
         else:
             # select the hit with the highest count from the dataframe
             # also return the count to display in the top hit table in the end
-            top_hit, top_count = (
+            top_hits, top_count = (
                 hits_for_id_above_similarity.head(1),
                 hits_for_id_above_similarity.head(1)["count"],
             )
-            top_hit = hits_for_id.query(
+            top_hits = hits_for_id.query(
                 "Class == '{}' and Order == '{}' and Family == '{}' and Genus == '{}' and Species == '{}'".format(
-                    top_hit["Class"].item(),
-                    top_hit["Order"].item(),
-                    top_hit["Family"].item(),
-                    top_hit["Genus"].item(),
-                    top_hit["Species"].item(),
+                    top_hits["Class"].item(),
+                    top_hits["Order"].item(),
+                    top_hits["Family"].item(),
+                    top_hits["Genus"].item(),
+                    top_hits["Species"].item(),
                 )
             )
 
-            # return the BIN if it is unique for all selected hits
-            print(top_hit["bin_uri"].unique(), top_count)
+            # replace the placeholder again to perform subsequent filtering
+            with pd.option_context("future.no_silent_downcasting", True):
+                top_hits = top_hits.replace("placeholder", np.nan)
+            # collect the bins from the selected top hit
+            top_hit_bins = top_hits["bin_uri"].dropna().unique()
+
+        # return species level information if similarity is high enough, else remove higher level information depending on level
+        top_hit = top_hits.head(1).copy()
+
+        # add the record count to the top hit
+        top_hit["# records"] = top_count
+
+        # add the BINs to the top hit
+        top_hit["BIN"] = ";".join(top_hit_bins)
+
+        # define level to remove them from low level hits
+        levels = ["Class", "Order", "Family", "Genus", "Species"]
+
+        # return species level information if similarity is high enough
+        # else remove higher level information form output depending on level
+        if threshold == 97:
+            break
+        else:
+            top_hit = top_hit.assign(
+                **{k: np.nan for k in levels[levels.index(level) + 1 :]}
+            )
+            break
+
+    # add flags to the hits
+    top_hit["flags"] = flag_hits(top_hits, hits_for_id_above_similarity, top_hit)
+
+    # remove all data that is not needed
+    top_hit = top_hit[
+        [
+            "ID",
+            "Phylum",
+            "Class",
+            "Order",
+            "Family",
+            "Genus",
+            "Species",
+            "Similarity",
+            "Status",
+            "# records",
+            "BIN",
+            "flags",
+        ]
+    ]
+
+    # return the top hit
+    return top_hit
 
 
 # main function to run the script
@@ -157,9 +260,17 @@ def main(hdf_name_top_100):
     # collect the top 100 hits with additional data
     top_100_hits = read_clean_data(hdf_name_top_100)
 
-    # PARALLIZE THIS IN THE END
-    for idx in top_100_hits["ID"].unique():
-        print(find_top_hit(top_100_hits, idx))
+    # collect the top hits
+    with tqdm_joblib(
+        desc="Calculating top hits", total=len(top_100_hits["ID"].unique())
+    ) as progress_bar:
+        all_top_hits = Parallel(n_jobs=psutil.cpu_count())(
+            delayed(find_top_hit)(top_100_hits, idx)
+            for idx in top_100_hits["ID"].unique()
+        )
+
+    all_top_hits = pd.concat(all_top_hits, axis=0).reset_index(drop=True)
+    all_top_hits.to_excel("test.xlsx", index=False)
 
 
 if __name__ == "__main__":
