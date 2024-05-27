@@ -146,16 +146,29 @@ def find_top_hit(top_100_hits, idx):
     while True:
         # copy the hits for the respective ID to perform modifications
         hits_for_id_above_similarity = hits_for_id.copy()
+
         # only select hits above the selected threshold
         hits_for_id_above_similarity = hits_for_id_above_similarity.loc[
             hits_for_id_above_similarity["Similarity"] >= threshold
         ]
 
+        # define the levels for the groupby. care about the selector string later
+        levels = ["Phylum", "Class", "Order", "Family", "Genus", "Species"]
+        levels = levels[: levels.index(level) + 1]
+
+        # drop na values at the respective level, replace the placeholder first, then put the placeholder back in place
+        with pd.option_context("future.no_silent_downcasting", True):
+            hits_for_id_above_similarity = (
+                hits_for_id_above_similarity.replace("placeholder", np.nan)
+                .dropna(subset=levels)
+                .fillna("placeholder")
+            )
+
         # group the hits by level and then count the appearence
         hits_for_id_above_similarity = pd.DataFrame(
             {
                 "count": hits_for_id_above_similarity.groupby(
-                    ["Phylum", "Class", "Order", "Family", "Genus", "Species"],
+                    levels,
                     sort=False,
                 ).size()
             }
@@ -165,14 +178,6 @@ def find_top_hit(top_100_hits, idx):
         hits_for_id_above_similarity = hits_for_id_above_similarity.sort_values(
             "count", ascending=False
         )
-
-        # drop na values at the respective level, replace the placeholder first, then put the placeholder back in place
-        with pd.option_context("future.no_silent_downcasting", True):
-            hits_for_id_above_similarity = (
-                hits_for_id_above_similarity.replace("placeholder", np.nan)
-                .dropna(subset=level)
-                .fillna("placeholder")
-            )
 
         # if no hit remains move up one level until class
         if len(hits_for_id_above_similarity.index) == 0:
@@ -185,22 +190,25 @@ def find_top_hit(top_100_hits, idx):
                 hits_for_id_above_similarity.head(1),
                 hits_for_id_above_similarity.head(1)["count"].item(),
             )
-            top_hits = hits_for_id.query(
-                "Class == '{}' and Order == '{}' and Family == '{}' and Genus == '{}' and Species == '{}'".format(
-                    top_hits["Class"].item(),
-                    top_hits["Order"].item(),
-                    top_hits["Family"].item(),
-                    top_hits["Genus"].item(),
-                    top_hits["Species"].item(),
-                )
-            )
+
+            # generate the selector string based on the selected level
+            query_string = [
+                "{} == '{}'".format(level, top_hits[level].item()) for level in levels
+            ]
+            query_string = " and ".join(query_string)
+
+            # query for the top hits
+            top_hits = hits_for_id.query(query_string)
 
             # replace the placeholder again to perform subsequent filtering
             with pd.option_context("future.no_silent_downcasting", True):
                 top_hits = top_hits.replace("placeholder", np.nan)
 
             # collect the bins from the selected top hit
-            top_hit_bins = top_hits["bin_uri"].dropna().unique()
+            if threshold == 97:
+                top_hit_bins = top_hits["bin_uri"].dropna().unique()
+            else:
+                top_hit_bins = []
 
         # return species level information if similarity is high enough, else remove higher level information depending on level
         top_hit = top_hits.head(1).copy()
@@ -265,10 +273,10 @@ def main(hdf_name_top_100):
     with tqdm_joblib(
         desc="Calculating top hits", total=len(top_100_hits["ID"].unique())
     ) as progress_bar:
-        all_top_hits_and_counts = Parallel(n_jobs=  # psutil.cpu_count())(
+        all_top_hits = Parallel(n_jobs=1)(
             delayed(find_top_hit)(top_100_hits, idx)
             for idx in top_100_hits["ID"].unique()
-        )
+        )  # psutil.cpu_count()
 
     all_top_hits = pd.concat(all_top_hits, axis=0).reset_index(drop=True)
     all_top_hits.to_excel("test.xlsx", index=False)
