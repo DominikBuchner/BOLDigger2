@@ -73,7 +73,8 @@ def read_and_order(fasta_path, hdf_name_top_100_hits, read_fasta):
             )
 
     # drop process IDs that are empty
-    process_ids = top_100_hits["Process_ID"].replace("", np.nan).dropna()
+    with pd.option_context("future.no_silent_downcasting", True):
+        process_ids = top_100_hits["Process_ID"].replace("", np.nan).dropna()
 
     # return process ids
     return top_100_hits, process_ids

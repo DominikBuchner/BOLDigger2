@@ -10,7 +10,10 @@ from string import punctuation, digits
 # only keep the first name of the species column
 def read_clean_data(hdf_name_top_100):
     # read the data
-    top_100_hits = pd.read_hdf(hdf_name_top_100, key="top_100_hits_additional_data")
+    # top_100_hits = pd.read_hdf(hdf_name_top_100, key="top_100_hits_additional_data")
+    top_100_hits = pd.read_excel(
+        "C:\\Users\\Dominik\\Documents\\GitHub\\BOLDigger2\\test_otus_top_100_hits_part_0.xlsx"
+    )
 
     # remove punctuationa and numbers from the taxonomy
     specials = punctuation + digits
@@ -35,21 +38,24 @@ def get_threshold(hit_for_id):
     # find the highest similarity value for the threshold
     threshold = hit_for_id["Similarity"].max()
 
-    if threshold >= 97:
-        return 98, "Species"
-    elif threshold >= 95:
-        return 95, "Genus"
-    elif threshold >= 90:
-        return 90, "Family"
-    elif threshold >= 85:
-        return 85, "Order"
-    elif threshold >= 50:
-        return 50, "Class"
-    else:
+    # check for no matches and broken records first
+    if threshold == 0:
         if hit_for_id["Species"][0] == "NoMatch":
             return 0, "NoMatch"
         elif hit_for_id["Species"][0] == "BrokenRecord":
             return 0, "BrokenRecord"
+    else:
+        # move through the taxonomy if it is no nomatch hit or broken record
+        if threshold >= 97:
+            return 98, "Species"
+        elif threshold >= 95:
+            return 95, "Genus"
+        elif threshold >= 90:
+            return 90, "Family"
+        elif threshold >= 85:
+            return 85, "Order"
+        elif threshold >= 50:
+            return 50, "Class"
 
 
 ## function to move the treshold one level up if no hit is found, also return the new tax level
@@ -65,7 +71,12 @@ def move_threshold_up(threshold):
 # function to find the top hit for a given ID
 def find_top_hit(top_100_hits, idx):
     # only select the respective id
-    hits_for_id = top_100_hits.loc[top_100_hits["ID"] == idx].copy()
+    hits_for_id = (
+        top_100_hits.loc[top_100_hits["ID"] == idx].copy().reset_index(drop=True)
+    )
+
+    # use a placeholder in all empty cells for pd.query to work properly
+    hits_for_id = hits_for_id.replace(np.nan, "placeholder")
 
     # get the threshold and taxonomic level
     threshold, level = get_threshold(hits_for_id)
@@ -73,9 +84,65 @@ def find_top_hit(top_100_hits, idx):
     # if NoMatch return the NoMatch, if broken record return BrokenRecord
     if threshold == 0:
         if level == "NoMatch":
-            return hits_for_id.query("Species == NoMatch").head(1)
+            return hits_for_id.query("Species == 'NoMatch'").head(1)
         elif level == "BrokenRecord":
-            return hits_for_id.query("Species == BrokenRecord").head(1)
+            return hits_for_id.query("Species == 'BrokenRecord'").head(1)
+
+    # loop through the thresholds until a hit is found
+    while True:
+        # copy the hits for the respective ID to perform modifications
+        hits_for_id_above_similarity = hits_for_id.copy()
+        # only select hits above the selected threshold
+        hits_for_id_above_similarity = hits_for_id_above_similarity.loc[
+            hits_for_id_above_similarity["Similarity"] >= threshold
+        ]
+
+        # group the hits by level and then count the appearence
+        hits_for_id_above_similarity = pd.DataFrame(
+            {
+                "count": hits_for_id_above_similarity.groupby(
+                    ["Phylum", "Class", "Order", "Family", "Genus", "Species"],
+                    sort=False,
+                ).size()
+            }
+        ).reset_index()
+
+        # sort the hits by count
+        hits_for_id_above_similarity = hits_for_id_above_similarity.sort_values(
+            "count", ascending=False
+        )
+
+        # drop na values at the respective level, replace the placeholder first, then put the placeholder back in place
+        with pd.option_context("future.no_silent_downcasting", True):
+            hits_for_id_above_similarity = (
+                hits_for_id_above_similarity.replace("placeholder", np.nan)
+                .dropna(subset=level)
+                .fillna("placeholder")
+            )
+
+        # if no hit remains move up one level until class
+        if len(hits_for_id_above_similarity.index) == 0:
+            threshold, level = move_threshold_up(threshold)
+            continue
+        else:
+            # select the hit with the highest count from the dataframe
+            # also return the count to display in the top hit table in the end
+            top_hit, top_count = (
+                hits_for_id_above_similarity.head(1),
+                hits_for_id_above_similarity.head(1)["count"],
+            )
+            top_hit = hits_for_id.query(
+                "Class == '{}' and Order == '{}' and Family == '{}' and Genus == '{}' and Species == '{}'".format(
+                    top_hit["Class"].item(),
+                    top_hit["Order"].item(),
+                    top_hit["Family"].item(),
+                    top_hit["Genus"].item(),
+                    top_hit["Species"].item(),
+                )
+            )
+
+            # return the BIN if it is unique for all selected hits
+            print(top_hit["bin_uri"].unique(), top_count)
 
 
 # main function to run the script
@@ -93,7 +160,6 @@ def main(hdf_name_top_100):
     # PARALLIZE THIS IN THE END
     for idx in top_100_hits["ID"].unique():
         print(find_top_hit(top_100_hits, idx))
-        # break
 
 
 if __name__ == "__main__":

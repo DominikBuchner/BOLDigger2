@@ -412,7 +412,8 @@ def check_valid_species_records(fasta_dict, hdf_name_top_100_hits):
         top_100_hits_species["database"] == "species"
     ]
     # fill empty string with NA values for easy filtering
-    top_100_hits_species = top_100_hits_species.replace("", np.nan)
+    with pd.option_context("future.no_silent_downcasting", True):
+        top_100_hits_species = top_100_hits_species.replace("", np.nan)
     # remove digits and punctuation in species column
     specials = punctuation + digits
     top_100_hits_species["Species"] = np.where(
