@@ -299,7 +299,7 @@ def main(hdf_name_top_100, fasta_path):
     with tqdm_joblib(
         desc="Calculating top hits", total=len(top_100_hits["ID"].unique())
     ) as progress_bar:
-        all_top_hits = Parallel(n_jobs=psutil.cpu_count())(
+        all_top_hits = Parallel(n_jobs=1)(
             delayed(find_top_hit)(top_100_hits, idx)
             for idx in top_100_hits["ID"].unique()
         )

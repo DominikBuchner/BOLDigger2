@@ -310,7 +310,7 @@ def main(fasta_path, hdf_name_top_100_hits, read_fasta):
 
     # request the data asynchronously
     # set the concurrent download limit here
-    sem = asyncio.Semaphore(10)
+    sem = asyncio.Semaphore(1)
 
     # skip the download if the data is already present
     if not additional_data_present(hdf_name_top_100_hits):
