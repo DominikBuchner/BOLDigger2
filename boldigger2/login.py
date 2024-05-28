@@ -9,8 +9,8 @@ def bold_login():
     # give user output
     print("{}: Trying to log in.".format(datetime.datetime.now().strftime("%H:%M:%S")))
     # ask for the password and username in a safe way
-    username = "lokal0209"  # input("BOLD username: ")
-    password = "2Us0AtT0lNF7VdlGBbjv"  # getpass.getpass("BOLD password: ")
+    username = input("BOLD username: ")
+    password = getpass.getpass("BOLD password: ")
 
     # start a new html session
     session = requests_html.HTMLSession()

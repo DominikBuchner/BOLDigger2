@@ -262,9 +262,18 @@ def find_top_hit(top_100_hits, idx):
 
 
 # function to finally save the results
-def save_results(fasta_path, all_top_hits):
+def save_results(
+    project_directory,
+    fasta_name,
+    all_top_hits,
+):
     # generate an excel savename
-    savename = Path(fasta_path).stem
+    savename_excel = Path(project_directory).joinpath(
+        "{}_identification_result.xlsx".format(fasta_name)
+    )
+    savename_parquet = Path(project_directory).joinpath(
+        "{}_identification_result.parquet.snappy".format(fasta_name)
+    )
 
     # save to excel
     print(
@@ -272,7 +281,7 @@ def save_results(fasta_path, all_top_hits):
             datetime.datetime.now().strftime("%H:%M:%S")
         )
     )
-    all_top_hits.to_excel("{}_identification_result.xlsx".format(savename), index=False)
+    all_top_hits.to_excel(savename_excel, index=False)
 
     # save to parquet
     print(
@@ -280,11 +289,11 @@ def save_results(fasta_path, all_top_hits):
             datetime.datetime.now().strftime("%H:%M:%S")
         )
     )
-    all_top_hits.to_parquet("{}_identification_result.parquet.snappy".format(savename))
+    all_top_hits.to_parquet(savename_parquet)
 
 
 # main function to run the script
-def main(hdf_name_top_100, fasta_path):
+def main(hdf_name_top_100, project_directory, fasta_name):
     # give user output
     print(
         "{}: Loading hits to select top hits.".format(
@@ -308,7 +317,7 @@ def main(hdf_name_top_100, fasta_path):
     all_top_hits = pd.concat(all_top_hits, axis=0).reset_index(drop=True)
 
     # save to excel and parquet
-    save_results(fasta_path, all_top_hits)
+    save_results(project_directory, fasta_name, all_top_hits)
 
     print("{}: Finished.".format(datetime.datetime.now().strftime("%H:%M:%S")))
 

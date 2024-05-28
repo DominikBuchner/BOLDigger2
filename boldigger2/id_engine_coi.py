@@ -605,7 +605,7 @@ def main(fasta_path):
     additional_data_download.main(fasta_path, hdf_name_top_100_hits, read_fasta)
 
     # filter for the top hits
-    digger_hit.main(hdf_name_top_100_hits, fasta_path)
+    digger_hit.main(hdf_name_top_100_hits, project_directory, fasta_name)
 
 
 # run only if called as a toplevel script
