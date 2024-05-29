@@ -54,6 +54,9 @@ Buchner D, Leese F (2020) BOLDigger – a Python package to identify and organis
 
 ## How it works
 
+
+
+
 ### Top hit selection
 
 Different thresholds (97%: species level, 95%: genus level, 90%: family level, 85%: order level, <85%: class level) for the taxonomic levels are used to find the best fitting hit. After determining the threshold for all hits the most common hit above the threshold will be selected. Note that for all hits below the threshold, the taxonomic resolution will be adjusted accordingly (e.g. for a 96% hit the species-level information will be discarded, and genus-level information will be used as the lowest taxonomic level).
