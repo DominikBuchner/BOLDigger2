@@ -74,19 +74,18 @@ The BOLDigger2 algorithm functions as follows:
 7. **Threshold Adjustment**: If no hit with no missing values is found, increase the threshold to the next higher level and repeat the process until a hit is found.
 
 
-### BOLDigger - requires additional data
+### BOLDigger2 Flagging System
 
-This option is similar to the JAMP option but flags suspicious hits. **Make sure additional data was downloaded.**
-There are currently 4 flags implemented, which will be updated if needed:
+BOLDigger2 employs a flagging system to highlight certain conditions, indicating a degree of uncertainty in the selected hit. Currently, there are five flags implemented, which may be updated as needed:
 
-1. Reverse BIN taxonomy has been used for any of the top 20 hits representing the selected match. (Reverse BIN taxonomy: Deposited sequences on BOLD that lack species information may be assigned by BIN affiliation. By that, a species name is shown for deposited sequences eben when no morphological identification down to species level was carried out.)
+1. **Reverse BIN Taxonomy**: This flag is raised if any of the top 100 hits representing the selected match utilize reverse BIN taxonomy. Reverse BIN taxonomy assigns species names to deposited sequences on BOLD that lack species information, potentially introducing uncertainty.
 
-2. There are two or more entries with differing taxonomic information above the selected threshold. (e.g. two species above 98%). Note that this is sometimes the case due to deposited sequences bearing invalid epitheton information such as "sp." or even a blank entry.
+2. **Differing Taxonomic Information**: If there are two or more entries with differing taxonomic information above the selected threshold (e.g., two species above 97%), this flag is triggered, suggesting potential discrepancies.
 
-3. All of the top 20 hits representing the top hit are private or early-release hits.
+3. **Private or Early-Release Data**: If all of the top 100 hits representing the top hit are private or early-release hits, this flag is raised, indicating limited accessibility to data.
 
-4. The top hit result represents a unique hit of the top 20 hits.
+4. **Unique Hit**: This flag indicates that the top hit result represents a unique hit among the top 100 hits, potentially requiring further scrutiny.
 
-5. The hit has been corrected via the API correction tool.
+5. **Multiple BINs**: If the selected species-level hit is composed of more than one BIN, this flag is raised, suggesting potential complexities in taxonomic assignment.
 
-A closer look at all flagged hits is advised since they represent a certain degree of uncertainty for the selected hit.
+Given the presence of these flags, it is advisable to conduct a closer examination of all flagged hits to better understand and address any uncertainties in the selected hit.
