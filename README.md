@@ -29,6 +29,7 @@ By leveraging these features, BOLDigger2 streamlines the process of OTU identifi
 - **Adjusted Species-Level Threshold**: BOLDigger2 accepts hits with a similarity of >= 97% as species-level records. This decision aligns with the 3% OTU clustering threshold commonly used in DNA metabarcoding.
 - **Increased process safety**: BOLDigger2 can be stopped at any point in the processing and will simply continue where it was stopped. BOLDigger2 will no longer alter the provided FASTA file. BOLDigger2 accepts both common FASTA formats.
 - **Dynamic downloads**: BOLDigger2 will automatically adjust the number of sequences per query to the BOLD database. If the connection times out the query size will be reduced, if the request is successful, the query size will be increased.
+- **Improved error handling**: Broken records in the BOLD database are now detected and directly reported as a "BrokenRecord" in addition to "NoMatches". If the BOLD website is not accessible, BOLDigger2 will simply wait until it is up again.
 
 ## Installation and Usage
 
