@@ -27,7 +27,7 @@ By leveraging these features, BOLDigger2 streamlines the process of OTU identifi
 - **Additional Data Fields**: The top hits in BOLDigger2 will contain additional data fields, such as the number of records supporting the selected top hit, the taxonomic level used for the top hit, and all BINS the selected hit belongs to if it is a species-level hit.
 - **Additional flag**: BOLDigger2 exchanged flag 5. If the top hit is represented by multiple BINS flag 5 is used. The API verification module from BOLDigger is no longer needed.
 - **Adjusted Species-Level Threshold**: BOLDigger2 accepts hits with a similarity of >= 97% as species-level records. This decision aligns with the 3% OTU clustering threshold commonly used in DNA metabarcoding.
-- **Increased process safety**: BOLDigger2 can be stopped at any point in the processing and will simply continue where it was stopped.
+- **Increased process safety**: BOLDigger2 can be stopped at any point in the processing and will simply continue where it was stopped. BOLDigger2 will no longer alter the provided FASTA file. BOLDigger2 accepts both common FASTA formats.
 
 ## Installation and Usage
 
