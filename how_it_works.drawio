@@ -1,9 +1,18 @@
-<mxfile host="app.diagrams.net" modified="2024-05-29T05:32:26.032Z" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36" version="24.4.9" etag="t4rHYCDwN1vU3gIeEaID" type="github">
+<mxfile host="app.diagrams.net" modified="2024-05-29T08:44:52.339Z" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36" etag="eh5TO6f0oeieetPvwmjK" version="24.4.9" type="github">
   <diagram name="Seite-1" id="E304glDuHv-My9nMEjOT">
-    <mxGraphModel>
+    <mxGraphModel dx="850" dy="756" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
+        <mxCell id="v3sZ_OI-lQdHN_WBkO5k-1" value="Logging in to BOLD" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="50" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="v3sZ_OI-lQdHN_WBkO5k-2" value="Generating download links from the species level barcodes database&amp;nbsp;" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="37" y="140" width="206" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="v3sZ_OI-lQdHN_WBkO5k-3" value="Download the top 100 hits for each of the links" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="37" y="230" width="208" height="60" as="geometry" />
+        </mxCell>
       </root>
     </mxGraphModel>
   </diagram>
