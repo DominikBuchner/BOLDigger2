@@ -33,7 +33,7 @@ By leveraging these features, BOLDigger2 streamlines the process of OTU identifi
 
 ## Installation and Usage
 
-BOLDigger2 requires Python version 3.9 or higher and can be easily installed using pip in any command line:
+BOLDigger2 requires Python version 3.10 or higher and can be easily installed using pip in any command line:
 
 `pip install boldigger2`
 
