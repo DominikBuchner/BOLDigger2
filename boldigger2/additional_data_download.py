@@ -154,6 +154,8 @@ async def as_request(url, as_session):
         try:
             # request the api
             response = await as_session.get(url, timeout=60)
+            # wait for 2 seconds before sending next request, otherwise BOLD API will block additional requests
+            time.sleep(2)
 
             xml_dataframe = xml_to_dataframe(response.text)
             break
