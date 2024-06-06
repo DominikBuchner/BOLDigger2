@@ -34,7 +34,7 @@ def read_clean_data(hdf_name_top_100):
 
 # accepts a dataframe for any individual id
 # return the threshold to filter for and a taxonomic level
-def get_threshold(hit_for_id):
+def get_threshold(hit_for_id, thresholds):
     # find the highest similarity value for the threshold
     threshold = hit_for_id["Similarity"].max()
 
@@ -46,21 +46,20 @@ def get_threshold(hit_for_id):
             return 0, "BrokenRecord"
     else:
         # move through the taxonomy if it is no nomatch hit or broken record
-        if threshold >= 97:
-            return 97, "Species"
-        elif threshold >= 95:
-            return 95, "Genus"
-        elif threshold >= 90:
-            return 90, "Family"
-        elif threshold >= 85:
-            return 85, "Order"
-        elif threshold >= 50:
-            return 50, "Class"
+        if threshold >= thresholds[0]:
+            return thresholds[0], "Species"
+        elif threshold >= thresholds[1]:
+            return thresholds[1], "Genus"
+        elif threshold >= thresholds[2]:
+            return thresholds[2], "Family"
+        elif threshold >= thresholds[3]:
+            return thresholds[3], "Order"
+        elif threshold >= thresholds[4]:
+            return thresholds[4], "Class"
 
 
 ## function to move the treshold one level up if no hit is found, also return the new tax level
-def move_threshold_up(threshold):
-    thresholds = [97, 95, 90, 85, 50]
+def move_threshold_up(threshold, thresholds):
     levels = ["Species", "Genus", "Family", "Order", "Class"]
     return (
         thresholds[thresholds.index(threshold) + 1],
@@ -106,14 +105,14 @@ def flag_hits(top_hits, hits_for_id_above_similarity, top_hit):
 
 
 # function to find the top hit for a given ID
-def find_top_hit(top_100_hits, idx):
+def find_top_hit(top_100_hits, idx, thresholds):
     # only select the respective id
     hits_for_id = (
         top_100_hits.loc[top_100_hits["ID"] == idx].copy().reset_index(drop=True)
     )
 
     # get the threshold and taxonomic level
-    threshold, level = get_threshold(hits_for_id)
+    threshold, level = get_threshold(hits_for_id, thresholds)
 
     # if NoMatch return the NoMatch, if broken record return BrokenRecord
     if threshold == 0:
@@ -157,7 +156,7 @@ def find_top_hit(top_100_hits, idx):
 
         # if no hit remains move up one level until class
         if len(hits_for_id_above_similarity.index) == 0:
-            threshold, level = move_threshold_up(threshold)
+            threshold, level = move_threshold_up(threshold, thresholds)
             continue
 
         # define the levels for the groupby. care about the selector string later
@@ -180,7 +179,7 @@ def find_top_hit(top_100_hits, idx):
         # if the hits still contained np.nan values, groupby will drop them:
         # if theres nothing left after the gruoupby move up one level and continue
         if len(hits_for_id_above_similarity.index) == 0:
-            threshold, level = move_threshold_up(threshold)
+            threshold, level = move_threshold_up(threshold, thresholds)
             continue
 
         # sort the hits by count
@@ -205,7 +204,7 @@ def find_top_hit(top_100_hits, idx):
         top_hits = hits_for_id.query(query_string)
 
         # collect the bins from the selected top hit
-        if threshold == 97:
+        if threshold == thresholds[0]:
             top_hit_bins = top_hits["bin_uri"].dropna().unique()
         else:
             top_hit_bins = []
@@ -227,7 +226,7 @@ def find_top_hit(top_100_hits, idx):
 
         # return species level information if similarity is high enough
         # else remove higher level information form output depending on level
-        if threshold == 97:
+        if threshold == thresholds[0]:
             break
         else:
             top_hit = top_hit.assign(
@@ -293,7 +292,7 @@ def save_results(
 
 
 # main function to run the script
-def main(hdf_name_top_100, project_directory, fasta_name):
+def main(hdf_name_top_100, project_directory, fasta_name, thresholds):
     # give user output
     print(
         "{}: Loading hits to select top hits.".format(
@@ -309,7 +308,7 @@ def main(hdf_name_top_100, project_directory, fasta_name):
         desc="Calculating top hits", total=len(top_100_hits["ID"].unique())
     ) as progress_bar:
         all_top_hits = Parallel(n_jobs=1)(
-            delayed(find_top_hit)(top_100_hits, idx)
+            delayed(find_top_hit)(top_100_hits, idx, thresholds)
             for idx in top_100_hits["ID"].unique()
         )
 

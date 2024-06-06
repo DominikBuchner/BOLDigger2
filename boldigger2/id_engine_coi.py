@@ -411,7 +411,7 @@ def top_100_downloaded(hdf_name_top_100_hits, hdf_name_download_links, database)
 # function to check which species level hits can used straight away (similarity > 97%, valid name)
 # and where additional data needs to be requested, returns a fresh fasta dict with everything that needs to
 # be identified again
-def check_valid_species_records(fasta_dict, hdf_name_top_100_hits):
+def check_valid_species_records(fasta_dict, hdf_name_top_100_hits, thresholds):
     # read the hdf
     top_100_hits_species = pd.read_hdf(
         hdf_name_top_100_hits, key="top_100_hits_unsorted"
@@ -435,7 +435,7 @@ def check_valid_species_records(fasta_dict, hdf_name_top_100_hits):
     top_100_hits_species = top_100_hits_species.dropna(subset="Species")
     # only keep values with similarity >= 97%
     top_100_hits_species = top_100_hits_species.loc[
-        top_100_hits_species["Similarity"] >= 97
+        top_100_hits_species["Similarity"] >= thresholds[0]
     ]
 
     # pop those values from the fasta dict
@@ -448,7 +448,7 @@ def check_valid_species_records(fasta_dict, hdf_name_top_100_hits):
     return fasta_dict
 
 
-def main(fasta_path, username="", password=""):
+def main(fasta_path, username="", password="", thresholds=[]):
     # log in to BOLD to generate the session, initialize the query size
     session, username, password = login.bold_login(username=username, password=password)
     query_size = 1
@@ -546,7 +546,9 @@ def main(fasta_path, username="", password=""):
     # filter the fasta dict for hits no having a species level hit, reset query size to 1
     session, username, password = login.bold_login(username=username, password=password)
     query_size = 1
-    fasta_dict = check_valid_species_records(fasta_dict, hdf_name_top_100_hits)
+    fasta_dict = check_valid_species_records(
+        fasta_dict, hdf_name_top_100_hits, thresholds=thresholds
+    )
 
     # gather download links at all barcode records level until all download links are requested
     # give user output
@@ -629,7 +631,9 @@ def main(fasta_path, username="", password=""):
     additional_data_download.main(fasta_path, hdf_name_top_100_hits, read_fasta)
 
     # filter for the top hits
-    digger_hit.main(hdf_name_top_100_hits, project_directory, fasta_name)
+    digger_hit.main(
+        hdf_name_top_100_hits, project_directory, fasta_name, thresholds=thresholds
+    )
 
 
 # run only if called as a toplevel script

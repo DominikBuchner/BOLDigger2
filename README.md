@@ -47,6 +47,21 @@ To automate the identify function in bioinformatic pipelines, the BOLD credentia
 
 `boldigger2 identify PATH_TO_FASTA -username USERNAME -password PASSWORD`
 
+To costumize the implemented thresholds for user-specific needs, the tresholds can be passed as an additional (ordered) argument.
+Up to 5 different thresholds can be passed for the different taxonomic levels (Species, Genus, Family, Order, Class).
+Thresholds not passed will be replaced by default, but BOLDigger2 will also inform you about this.
+
+`boldigger2 identify PATH_TO_FASTA -thresholds 99 97`
+
+Output:
+
+```
+19:16:16: Default thresholds changed!
+19:16:16: Species: 99, Genus: 97, Family: 90, Genus: 85, Species: 50
+19:16:16: Trying to log in.
+BOLD username:
+```
+
 BOLDigger2 will prompt you for your username and password, and then it will perform the identification.
 
 When a new version is released, you can update BOLDigger2 by typing:
@@ -109,7 +124,7 @@ The BOLDigger2 algorithm operates according to the following flowchart:
 
 ### Top hit selection
 
-Different thresholds (97%: species level, 95%: genus level, 90%: family level, 85%: order level, <85%: class level) for the taxonomic levels are used to find the best fitting hit. After determining the threshold for all hits the most common hit above the threshold will be selected. Note that for all hits below the threshold, the taxonomic resolution will be adjusted accordingly (e.g. for a 96% hit the species-level information will be discarded, and genus-level information will be used as the lowest taxonomic level).
+Different thresholds (97%: species level, 95%: genus level, 90%: family level, 85%: order level, <85% and >= 50: class level) for the taxonomic levels are used to find the best fitting hit. After determining the threshold for all hits the most common hit above the threshold will be selected. Note that for all hits below the threshold, the taxonomic resolution will be adjusted accordingly (e.g. for a 96% hit the species-level information will be discarded, and genus-level information will be used as the lowest taxonomic level).
 
 The BOLDigger2 algorithm functions as follows:
 

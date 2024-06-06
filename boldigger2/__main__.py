@@ -1,4 +1,4 @@
-import argparse, sys
+import argparse, sys, datetime
 from boldigger2 import id_engine_coi
 
 
@@ -29,25 +29,53 @@ def main():
         help="Path to the fasta file or fasta file in current working directory.",
     )
 
-    # add the only argument (fasta path)
+    # add the optional argument username
     parser_identify.add_argument(
         "-username",
         default="",
         help="BOLD username",
     )
 
-    # add the only argument (fasta path)
+    # add the optional argument password
     parser_identify.add_argument(
         "-password",
         default="",
         help="BOLD password",
     )
 
+    # add the optional argument thresholds
+    parser_identify.add_argument(
+        "-thresholds",
+        nargs="+",
+        type=int,
+        help="BOLD password",
+    )
+
     # add version control NEEDS TO BE UPDATED
-    parser.add_argument("--version", action="version", version="1.0.5")
+    parser.add_argument("--version", action="version", version="1.0.6")
 
     # parse the arguments
     arguments = parser.parse_args()
+
+    # only use the threshold provided by the user replace the rest with defaults
+    default_thresholds = [97, 95, 90, 85, 50]
+    thresholds = []
+
+    for i in range(5):
+        try:
+            thresholds.append(arguments.thresholds[i])
+        except (IndexError, TypeError):
+            thresholds.append(default_thresholds[i])
+
+    if arguments.thresholds:
+        # give user output
+        print(
+            "{}: Default thresholds changed!\n{}: Species: {}, Genus: {}, Family: {}, Genus: {}, Species: {}".format(
+                datetime.datetime.now().strftime("%H:%M:%S"),
+                datetime.datetime.now().strftime("%H:%M:%S"),
+                *thresholds
+            )
+        )
 
     # print help if no argument is provided
     if len(sys.argv) == 1:
@@ -55,7 +83,12 @@ def main():
 
     # run the identification engine
     if arguments.function == "identify":
-        id_engine_coi.main(arguments.fasta_file, arguments.username, arguments.password)
+        id_engine_coi.main(
+            arguments.fasta_file,
+            username=arguments.username,
+            password=arguments.password,
+            thresholds=thresholds,
+        )
 
 
 # run only if called as a top level script
