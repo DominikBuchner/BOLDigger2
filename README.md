@@ -43,6 +43,10 @@ To run the identify function, use the following command:
 
 `boldigger2 identify PATH_TO_FASTA`
 
+To automate the identify function in bioinformatic pipelines, the BOLD credentials can also by passed directly as optional arguments
+
+`boldigger2 identify PATH_TO_FASTA -username USERNAME -password PASSWORD`
+
 BOLDigger2 will prompt you for your username and password, and then it will perform the identification.
 
 When a new version is released, you can update BOLDigger2 by typing:
@@ -128,7 +132,7 @@ The BOLDigger2 algorithm functions as follows:
 
 BOLDigger2 employs a flagging system to highlight certain conditions, indicating a degree of uncertainty in the selected hit. Currently, there are five flags implemented, which may be updated as needed:
 
-1. **Reverse BIN Taxonomy**: This flag is raised if any of the top 100 hits representing the selected match utilize reverse BIN taxonomy. Reverse BIN taxonomy assigns species names to deposited sequences on BOLD that lack species information, potentially introducing uncertainty.
+1. **Reverse BIN Taxonomy**: This flag is raised if all of the top 100 hits representing the selected match utilize reverse BIN taxonomy. Reverse BIN taxonomy assigns species names to deposited sequences on BOLD that lack species information, potentially introducing uncertainty.
 
 2. **Differing Taxonomic Information**: If there are two or more entries with differing taxonomic information above the selected threshold (e.g., two species above 97%), this flag is triggered, suggesting potential discrepancies.
 

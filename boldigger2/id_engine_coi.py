@@ -49,6 +49,8 @@ def read_fasta(fasta_path):
     }
 
     # check for invalid sequences (invalid characters or sequences that are too short)
+    raise_false_fasta = False
+
     for key in fasta_dict.keys():
         if len(fasta_dict[key].seq) < 80:
             print(
@@ -56,7 +58,7 @@ def read_fasta(fasta_path):
                     datetime.datetime.now().strftime("%H:%M:%S"), key
                 )
             )
-            sys.exit()
+            raise_false_fasta = True
         # check if the sequences contain invalid chars
         elif not set(fasta_dict[key].seq.upper()).issubset(valid_chars):
             print(
@@ -64,9 +66,12 @@ def read_fasta(fasta_path):
                     datetime.datetime.now().strftime("%H:%M:%S"), key
                 )
             )
-            sys.exit()
+            raise_false_fasta = True
 
-    return fasta_dict, fasta_name, project_directory
+    if not raise_false_fasta:
+        return fasta_dict, fasta_name, project_directory
+    else:
+        sys.exit()
 
 
 # function to check for which OTUs download links have already been generated
@@ -80,8 +85,11 @@ def check_already_done(fasta_dict, fasta_name, project_directory, database):
         download_links = pd.read_hdf(hdf_name)
         download_links = download_links.loc[download_links["database"] == database]
         # remove already saved id from the fasta dict
-        for id in download_links["id"]:
-            fasta_dict.pop(id, None)
+        fasta_dict = {
+            key: value
+            for key, value in fasta_dict.items()
+            if key not in download_links["id"].unique()
+        }
 
         # return fasta dict and hdf name
         return fasta_dict, hdf_name
@@ -159,8 +167,9 @@ def gather_download_links(session, fasta_dict, hdf_name, query_size, database):
         )
 
     # remove finished ids from the fasta dict
-    for id in bold_query.keys():
-        fasta_dict.pop(id, None)
+    fasta_dict = {
+        key: value for key, value in fasta_dict.items() if key not in bold_query.keys()
+    }
 
     # return the fasta dict again to continue
     return fasta_dict
@@ -430,15 +439,18 @@ def check_valid_species_records(fasta_dict, hdf_name_top_100_hits):
     ]
 
     # pop those values from the fasta dict
-    for key in top_100_hits_species["ID"].unique():
-        fasta_dict.pop(key, None)
+    fasta_dict = {
+        key: value
+        for key, value in fasta_dict.items()
+        if key not in top_100_hits_species["ID"].unique()
+    }
 
     return fasta_dict
 
 
-def main(fasta_path):
+def main(fasta_path, username="", password=""):
     # log in to BOLD to generate the session, initialize the query size
-    session = login.bold_login()
+    session, username, password = login.bold_login(username=username, password=password)
     query_size = 1
 
     # read the input fasta
@@ -521,12 +533,21 @@ def main(fasta_path):
         )
     )
 
+    # give user output
+    print(
+        "{}: Performing second login for requesting links from the all records database.".format(
+            datetime.datetime.now().strftime("%H:%M:%S")
+        )
+    )
+
     # reread the fasta to generate a fresh fasta dict
     fasta_dict, fasta_name, project_directory = read_fasta(fasta_path)
 
     # filter the fasta dict for hits no having a species level hit, reset query size to 1
-    fasta_dict = check_valid_species_records(fasta_dict, hdf_name_top_100_hits)
+    session, username, password = login.bold_login(username=username, password=password)
     query_size = 1
+    fasta_dict = check_valid_species_records(fasta_dict, hdf_name_top_100_hits)
+
     # gather download links at all barcode records level until all download links are requested
     # give user output
     print(
@@ -579,6 +600,8 @@ def main(fasta_path):
     download_links_all_records = top_100_downloaded(
         hdf_name_top_100_hits, hdf_name_download_links, database="all_records"
     )
+
+    print(len(download_links_all_records))
 
     # set the concurrent download limit here
     # code has been timed to find the optimal download time

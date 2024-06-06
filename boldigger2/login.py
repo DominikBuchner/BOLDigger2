@@ -5,12 +5,13 @@ from bs4 import BeautifulSoup as BSoup
 
 
 # function to log in to the BOLD databases, is needed to run the identification engine with >1 sequences
-def bold_login():
+def bold_login(username="", password=""):
     # give user output
     print("{}: Trying to log in.".format(datetime.datetime.now().strftime("%H:%M:%S")))
-    # ask for the password and username in a safe way
-    username = input("BOLD username: ")
-    password = getpass.getpass("BOLD password: ")
+    # ask for the password and username in a safe way only if it is not prvided via the input
+    if not username:
+        username = input("BOLD username: ")
+        password = getpass.getpass("BOLD password: ")
 
     # start a new html session
     session = requests_html.HTMLSession()
@@ -62,7 +63,7 @@ def bold_login():
             "{}: Login successful.".format(datetime.datetime.now().strftime("%H:%M:%S"))
         )
         # return the session if the login was successful to handle the requests
-        return session
+        return session, username, password
 
 
 if __name__ == "__main__":

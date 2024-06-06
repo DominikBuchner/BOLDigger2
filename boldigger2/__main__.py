@@ -29,8 +29,22 @@ def main():
         help="Path to the fasta file or fasta file in current working directory.",
     )
 
+    # add the only argument (fasta path)
+    parser_identify.add_argument(
+        "-username",
+        default="",
+        help="BOLD username",
+    )
+
+    # add the only argument (fasta path)
+    parser_identify.add_argument(
+        "-password",
+        default="",
+        help="BOLD password",
+    )
+
     # add version control NEEDS TO BE UPDATED
-    parser.add_argument("--version", action="version", version="1.0.0")
+    parser.add_argument("--version", action="version", version="1.0.5")
 
     # parse the arguments
     arguments = parser.parse_args()
@@ -41,10 +55,7 @@ def main():
 
     # run the identification engine
     if arguments.function == "identify":
-        id_engine_coi.main(arguments.fasta_file)
-
-    # run the GUI
-    # ----- TBD -----
+        id_engine_coi.main(arguments.fasta_file, arguments.username, arguments.password)
 
 
 # run only if called as a top level script

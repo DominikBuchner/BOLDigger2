@@ -77,9 +77,9 @@ def flag_hits(top_hits, hits_for_id_above_similarity, top_hit):
     id_method = top_hits["identification_method"]
 
     if (
-        id_method.str.startswith("BOLD").any()
-        or id_method.str.startswith("ID").any()
-        or id_method.str.startswith("Tree").any()
+        id_method.str.startswith("BOLD").all()
+        or id_method.str.startswith("ID").all()
+        or id_method.str.startswith("Tree").all()
     ):
         flags[0] = "1"
 
