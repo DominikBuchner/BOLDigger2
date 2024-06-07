@@ -57,6 +57,11 @@ def main():
     # parse the arguments
     arguments = parser.parse_args()
 
+    # print help if no argument is provided
+    if len(sys.argv) == 1:
+        arguments.func(arguments)
+        sys.exit()
+
     # only use the threshold provided by the user replace the rest with defaults
     default_thresholds = [97, 95, 90, 85, 50]
     thresholds = []
@@ -76,10 +81,6 @@ def main():
                 *thresholds
             )
         )
-
-    # print help if no argument is provided
-    if len(sys.argv) == 1:
-        arguments.func(arguments)
 
     # run the identification engine
     if arguments.function == "identify":
