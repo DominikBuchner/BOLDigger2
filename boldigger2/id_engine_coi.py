@@ -485,17 +485,26 @@ def main(fasta_path, username="", password="", thresholds=[]):
                     pbar.update(query_size)
                     # update the query size by 5
                     query_size = update_query_size(query_size, 5)
+
+                    # give user output
+                    if query_size != 50:
+                        tqdm.write(
+                            "{}: Query size updated to {}.".format(
+                                datetime.datetime.now().strftime("%H:%M:%S"), query_size
+                            )
+                        )
+
                 except (ReadTimeout, ConnectionError):
                     # repeat if there is no response
-                    # give user output
-                    tqdm.write(
-                        "{}: BOLD did not respond. Retrying with reduced query size.".format(
-                            datetime.datetime.now().strftime("%H:%M:%S")
-                        )
-                    )
-
                     # update the query size
                     query_size = update_query_size(query_size, -5)
+                    # give user output
+                    if query_size != 1:
+                        tqdm.write(
+                            "{}: BOLD did not respond. Retrying with reduced query size of {}.".format(
+                                datetime.datetime.now().strftime("%H:%M:%S"), query_size
+                            )
+                        )
 
     # give user output
     print(
