@@ -1,4 +1,4 @@
-import requests_html, getpass, datetime
+import requests_html, getpass, datetime, sys
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from bs4 import BeautifulSoup as BSoup
@@ -58,6 +58,7 @@ def bold_login(username="", password=""):
                 datetime.datetime.now().strftime("%H:%M:%S")
             )
         )
+        sys.exit()
     else:
         print(
             "{}: Login successful.".format(datetime.datetime.now().strftime("%H:%M:%S"))

@@ -566,7 +566,6 @@ def main(fasta_path, username="", password="", thresholds=[]):
 
     # filter the fasta dict for hits no having a species level hit, reset query size to 1
     session, username, password = login.bold_login(username=username, password=password)
-    query_size = 1
     fasta_dict = check_valid_species_records(
         fasta_dict, hdf_name_top_100_hits, thresholds=thresholds
     )
@@ -645,8 +644,6 @@ def main(fasta_path, username="", password="", thresholds=[]):
     download_links_all_records = top_100_downloaded(
         hdf_name_top_100_hits, hdf_name_download_links, database="all_records"
     )
-
-    print(len(download_links_all_records))
 
     # set the concurrent download limit here
     # code has been timed to find the optimal download time

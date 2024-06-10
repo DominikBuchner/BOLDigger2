@@ -154,7 +154,7 @@ async def as_request(url, as_session):
         try:
             # request the api
             response = await as_session.get(url, timeout=60)
-            # wait for 5 seconds before sending next request, otherwise BOLD API will block additional requests
+            # wait for 5 seconds to not overload the API
             time.sleep(5)
 
             xml_dataframe = xml_to_dataframe(response.text)
@@ -321,26 +321,26 @@ def main(fasta_path, hdf_name_top_100_hits, read_fasta):
             as_session(download_links=download_batches, semaphore=sem)
         )
 
-        # add the metadata to the top 100 hits, push to a new hdf table
-        top_100_hits = add_additional_data(
-            hdf_name_top_100_hits, top_100_hits, process_ids, additional_data
-        )
+    # add the metadata to the top 100 hits, push to a new hdf table
+    top_100_hits = add_additional_data(
+        hdf_name_top_100_hits, top_100_hits, process_ids, additional_data
+    )
 
-        # give user output
-        print(
-            "{}: Additional data successfully downloaded and saved.".format(
-                datetime.datetime.now().strftime("%H:%M:%S")
-            )
+    # give user output
+    print(
+        "{}: Additional data successfully downloaded and saved.".format(
+            datetime.datetime.now().strftime("%H:%M:%S")
         )
+    )
 
-        print(
-            "{}: Saving top 100 hits to excel, this may take a while.".format(
-                datetime.datetime.now().strftime("%H:%M:%S")
-            )
+    print(
+        "{}: Saving top 100 hits to excel, this may take a while.".format(
+            datetime.datetime.now().strftime("%H:%M:%S")
         )
+    )
 
-        # run the excel converter in the end
-        excel_converter(hdf_name_top_100_hits)
+    # run the excel converter in the end
+    excel_converter(hdf_name_top_100_hits)
 
 
 # run only if called as a toplevel script
