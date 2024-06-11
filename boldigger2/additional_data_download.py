@@ -155,7 +155,7 @@ async def as_request(url, as_session):
             # request the api
             response = await as_session.get(url, timeout=60)
             # wait for 5 seconds to not overload the API
-            time.sleep(5)
+            time.sleep(10)
 
             xml_dataframe = xml_to_dataframe(response.text)
             break
