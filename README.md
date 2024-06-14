@@ -57,7 +57,7 @@ Output:
 
 ```
 19:16:16: Default thresholds changed!
-19:16:16: Species: 99, Genus: 97, Family: 90, Genus: 85, Species: 50
+19:16:16: Species: 99, Genus: 97, Family: 90, Order: 85, Class: 50
 19:16:16: Trying to log in.
 BOLD username:
 ```
