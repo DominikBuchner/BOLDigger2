@@ -104,6 +104,29 @@ def flag_hits(top_hits, hits_for_id_above_similarity, top_hit):
     return flags
 
 
+# function to return an incomplete taxonomy hit
+def return_incomplete_taxonomy(idx):
+    incomplete_taxonomy = {
+        "ID": idx,
+        "Phylum": "IncompleteTaxonomy",
+        "Class": "IncompleteTaxnonmy",
+        "Order": "IncompleteTaxonomy",
+        "Family": "IncompleteTaxonomy",
+        "Genus": "IncompleteTaxonomy",
+        "Species": "IncompleteTaxonomy",
+        "Similarity": 0,
+        "Status": np.nan,
+        "records": np.nan,
+        "selected_level": np.nan,
+        "BIN": np.nan,
+        "flags": np.nan,
+    }
+
+    incomplete_taxonomy = pd.DataFrame(data=incomplete_taxonomy, index=[0])
+
+    return incomplete_taxonomy
+
+
 # function to find the top hit for a given ID
 def find_top_hit(top_100_hits, idx, thresholds):
     # only select the respective id
@@ -144,6 +167,9 @@ def find_top_hit(top_100_hits, idx, thresholds):
         # copy the hits for the respective ID to perform modifications
         hits_for_id_above_similarity = hits_for_id.copy()
 
+        # collect the idx here, to push it into the incomplete taxonomy if needed
+        idx = hits_for_id_above_similarity.head(1)["ID"].item()
+
         with pd.option_context("future.no_silent_downcasting", True):
             hits_for_id_above_similarity = hits_for_id_above_similarity.replace(
                 "", np.nan
@@ -156,8 +182,13 @@ def find_top_hit(top_100_hits, idx, thresholds):
 
         # if no hit remains move up one level until class
         if len(hits_for_id_above_similarity.index) == 0:
-            threshold, level = move_threshold_up(threshold, thresholds)
-            continue
+            try:
+                threshold, level = move_threshold_up(threshold, thresholds)
+                continue
+            # if there is incomplete taxonomy, boldigger2 will move through all thresholds but end up here
+            # return incomplete taxonomy if that is the case
+            except IndexError:
+                return return_incomplete_taxonomy(idx)
 
         # define the levels for the groupby. care about the selector string later
         all_levels = ["Phylum", "Class", "Order", "Family", "Genus", "Species"]
@@ -179,8 +210,13 @@ def find_top_hit(top_100_hits, idx, thresholds):
         # if the hits still contained np.nan values, groupby will drop them:
         # if theres nothing left after the gruoupby move up one level and continue
         if len(hits_for_id_above_similarity.index) == 0:
-            threshold, level = move_threshold_up(threshold, thresholds)
-            continue
+            try:
+                threshold, level = move_threshold_up(threshold, thresholds)
+                continue
+            # if there is incomplete taxonomy, boldigger2 will move through all thresholds but end up here
+            # return incomplete taxonomy if that is the case
+            except IndexError:
+                return return_incomplete_taxonomy(idx)
 
         # sort the hits by count
         hits_for_id_above_similarity = hits_for_id_above_similarity.sort_values(

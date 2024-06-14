@@ -321,10 +321,10 @@ def main(fasta_path, hdf_name_top_100_hits, read_fasta):
             as_session(download_links=download_batches, semaphore=sem)
         )
 
-    # add the metadata to the top 100 hits, push to a new hdf table
-    top_100_hits = add_additional_data(
-        hdf_name_top_100_hits, top_100_hits, process_ids, additional_data
-    )
+        # add the metadata to the top 100 hits, push to a new hdf table
+        top_100_hits = add_additional_data(
+            hdf_name_top_100_hits, top_100_hits, process_ids, additional_data
+        )
 
     # give user output
     print(

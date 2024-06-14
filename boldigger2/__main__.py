@@ -75,7 +75,7 @@ def main():
     if arguments.thresholds:
         # give user output
         print(
-            "{}: Default thresholds changed!\n{}: Species: {}, Genus: {}, Family: {}, Genus: {}, Species: {}".format(
+            "{}: Default thresholds changed!\n{}: Species: {}, Genus: {}, Family: {}, Order: {}, Class: {}".format(
                 datetime.datetime.now().strftime("%H:%M:%S"),
                 datetime.datetime.now().strftime("%H:%M:%S"),
                 *thresholds
