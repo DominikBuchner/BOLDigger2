@@ -52,7 +52,7 @@ def main():
     )
 
     # add version control NEEDS TO BE UPDATED
-    parser.add_argument("--version", action="version", version="1.0.6")
+    parser.add_argument("--version", action="version", version="1.2.3")
 
     # parse the arguments
     arguments = parser.parse_args()
