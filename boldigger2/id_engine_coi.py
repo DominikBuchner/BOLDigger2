@@ -13,7 +13,7 @@ from io import StringIO
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from string import punctuation, digits
-from exceptions import BadResponseError
+from boldigger2.exceptions import BadResponseError
 
 
 # function to read the fasta file into a dictionary
