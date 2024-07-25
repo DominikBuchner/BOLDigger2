@@ -651,6 +651,19 @@ def main(fasta_path, username="", password="", thresholds=[]):
                                 datetime.datetime.now().strftime("%H:%M:%S"), query_size
                             )
                         )
+                except BadResponseError:
+                    tqdm.write(
+                        "{}: BOLD did not return a sufficient number of download links. Retrying".format(
+                            datetime.datetime.now().strftime("%H:%M:%S")
+                        )
+                    )
+                    # wait for 3 minutes to give the BOLD Server a break
+                    time.sleep(180)
+
+                    # login again
+                    session, username, password = login.bold_login(
+                        username=username, password=password
+                    )
 
     # give user output
     print(
