@@ -1,4 +1,4 @@
-import datetime, sys, more_itertools, datetime, requests_html, asyncio
+import datetime, sys, more_itertools, datetime, requests_html, asyncio, time
 import pandas as pd
 import numpy as np
 from boldigger2 import login, additional_data_download, digger_hit
@@ -13,6 +13,7 @@ from io import StringIO
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from string import punctuation, digits
+from exceptions import BadResponseError
 
 
 # function to read the fasta file into a dictionary
@@ -140,6 +141,11 @@ def gather_download_links(session, fasta_dict, hdf_name, query_size, database):
         "http://boldsystems.org" + download_links[i].get("result")
         for i in range(len(download_links))
     ]
+
+    # check if the number of download links matches the query size
+    if len(download_links) != query_size:
+        # raise a BadResponseError if something happened on BOLDs end
+        raise BadResponseError
 
     # gather the results in a dataframe to easily append them to hdf
     download_dataframe = pd.DataFrame(
@@ -517,6 +523,19 @@ def main(fasta_path, username="", password="", thresholds=[]):
                                 datetime.datetime.now().strftime("%H:%M:%S"), query_size
                             )
                         )
+                except BadResponseError:
+                    tqdm.write(
+                        "{}: BOLD did not return a sufficient number of download links. Retrying".format(
+                            datetime.datetime.now().strftime("%H:%M:%S")
+                        )
+                    )
+                    # wait for 3 minutes to give the BOLD Server a break
+                    time.sleep(180)
+
+                    # login again
+                    session, username, password = login.bold_login(
+                        username=username, password=password
+                    )
 
     # give user output
     print(

@@ -1,5 +1,6 @@
 import argparse, sys, datetime
 from boldigger2 import id_engine_coi
+from importlib.metadata import version
 
 
 # main function for the command line interface
@@ -52,7 +53,7 @@ def main():
     )
 
     # add version control NEEDS TO BE UPDATED
-    parser.add_argument("--version", action="version", version="1.2.3")
+    parser.add_argument("--version", action="version", version=version("boldigger2"))
 
     # parse the arguments
     arguments = parser.parse_args()
