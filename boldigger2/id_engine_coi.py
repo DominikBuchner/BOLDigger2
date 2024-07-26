@@ -143,7 +143,7 @@ def gather_download_links(session, fasta_dict, hdf_name, query_size, database):
     ]
 
     # check if the number of download links matches the query size
-    if len(download_links) != query_size:
+    if len(download_links) != len(bold_query):
         # raise a BadResponseError if something happened on BOLDs end
         raise BadResponseError
 
