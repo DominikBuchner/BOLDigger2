@@ -128,6 +128,8 @@ def gather_download_links(session, fasta_dict, query_size, database):
             "sequence": bold_query_string,
         }
 
+    print(post_request_data)
+
     # post the request, reduce timeout to 5 minutes, decrease query size instead of just retrying
     response = session.post(
         "https://boldsystems.org/index.php/IDS_IdentificationRequest",
