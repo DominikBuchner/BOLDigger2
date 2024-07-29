@@ -203,7 +203,14 @@ def update_query_size(query_size, increase):
 async def as_request(species_id, url, as_session, database, hdf_name_top_100_hits):
     # add all requests to the eventloop
     # request top 100 hits
-    response = await as_session.get("{}&display=100".format(url), timeout=60)
+    # retry in case of connection error
+    while True:
+        try:
+            response = await as_session.get("{}&display=100".format(url), timeout=60)
+            break
+        except ConnectionError:
+            continue
+
     # parse the response and pass it to pandas
     response = BSoup(response.text, "html5lib")
 
