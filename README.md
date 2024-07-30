@@ -120,7 +120,6 @@ The BOLDigger2 algorithm operates according to the following flowchart:
     - Calculate the top hit for each sequence.
     - Save the top hits in both Excel format (`identification_result.xlsx`) and Parquet format (`identification_result.parquet.snappy`) for fast further processing.
 
-https://app.diagrams.net/?tags=%7B%7D&lightbox=1&highlight=0000ff&edit=_blank&layers=1&nav=1&title=how_it_works.drawio#Uhttps%3A%2F%2Fraw.githubusercontent.com%2FDominikBuchner%2FBOLDigger2%2Fmain%2Fhow_it_works.drawio
 ![how_it_works drawio (1)](https://github.com/DominikBuchner/BOLDigger2/assets/38790188/5135cefe-e082-4ef7-bbe6-8feee6b82aad)
 
 
