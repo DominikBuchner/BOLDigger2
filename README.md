@@ -81,30 +81,32 @@ The BOLDigger2 algorithm operates according to the following flowchart:
    - Authenticate with the BOLD data systems.
 
 2. **Generate Download Links for Species-Level Barcodes:**
-   - Generate the download links for the species-level barcode database for each sequence.
-   - Save these links to an HDF storage with the key `"download_links"`.
+   - Generate the download links for the species-level barcode database for a batch of sequences.
 
 3. **Download Top 100 Hits:**
-   - Retrieve the download links from the HDF storage.
+   - Retrieve the download links from the previous step.
    - Download the top 100 hits for each link.
    - Save the results to an HDF storage with the key `"top_100_hits_unsorted"`.
+   - Continue until all sequences are identified.
 
 4. **Identify Sequences Without Species-Level Hits:**
    - Read the unsorted top 100 hits.
    - Identify sequences that did not yield a species-level hit.
 
 5. **Generate Download Links for All Records:**
-   - Generate download links for the sequences without species-level hits for the "all records on BOLD" database.
-   - Save these links to the HDF storage with the key `"download_links"`.
+   - Generate download links for a batch of sequences without species-level hits for the "all records on BOLD" database.
 
 6. **Download Top 100 Hits for All Records:**
-   - Retrieve the download links from the HDF storage.
+   - Retrieve the download links from the previous step.
    - Download the top 100 hits for each link.
+   - Save the results to an HDF storage with the key `"top_100_hits_unsorted"`.
+   - Continue until all sequences are identified.
 
 7. **Sort and Save Top Hits:**
    - Read all top 100 hits.
-   - Identify all public records and trigger the additional data download.
+   - Remove duplicate entries.
    - Sort the hits in the same order as in the FASTA file.
+   - Identify all public records and trigger the additional data download.
    - Save them in the HDF storage with the key `"top_100_hits_sorted"`.
 
 8. **Save Additional Data:**
