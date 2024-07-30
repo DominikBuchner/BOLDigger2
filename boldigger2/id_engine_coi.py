@@ -75,32 +75,33 @@ def read_fasta(fasta_path):
         sys.exit()
 
 
-# function to check for which OTUs download links have already been generated
-def check_already_done(fasta_dict, fasta_name, project_directory, database):
-    # generate a filename for the hdf link storage file
-    hdf_name = project_directory.joinpath("{}_download_links.h5.lz".format(fasta_name))
-
-    # try to read the file. If it does not exist continue with the full seq dict.
-    # If there are already download links remove those from the fasta dict
+def check_already_downloaded(fasta_dict, hdf_name_top_100_hits, database):
     try:
-        download_links = pd.read_hdf(hdf_name)
-        download_links = download_links.loc[download_links["database"] == database]
-        # remove already saved id from the fasta dict
-        fasta_dict = {
-            key: value
-            for key, value in fasta_dict.items()
-            if key not in download_links["id"].unique()
-        }
+        # load the hdf file
+        hdf_top_100_hits = pd.read_hdf(
+            hdf_name_top_100_hits, key="top_100_hits_unsorted"
+        )
 
-        # return fasta dict and hdf name
-        return fasta_dict, hdf_name
+        # filter for the correct database
+        hdf_top_100_hits = hdf_top_100_hits.loc[
+            hdf_top_100_hits["database"] == database
+        ]
+
+        # collect all unique IDs and remove them from the fasta dict
+        unique_ids = hdf_top_100_hits["ID"].unique()
+        fasta_dict = {
+            id: seq for (id, seq) in fasta_dict.items() if id not in unique_ids
+        }
     except FileNotFoundError:
-        # simply return the fasta dict, since no modifications are needed
-        return fasta_dict, hdf_name
+        # do nothing if nothing has been downloaded yet
+        pass
+
+    # return the (updated) fasta dict
+    return fasta_dict
 
 
 # function to gather download links and append them to the hdf storage
-def gather_download_links(session, fasta_dict, hdf_name, query_size, database):
+def gather_download_links(session, fasta_dict, query_size, database):
     # extract query-size elements from the fasta dict
     bold_query = dict(more_itertools.take(query_size, fasta_dict.items()))
 
@@ -152,33 +153,7 @@ def gather_download_links(session, fasta_dict, hdf_name, query_size, database):
         data=zip(bold_query.keys(), download_links), columns=["id", "url"]
     )
 
-    # add the database column
-    download_dataframe["database"] = database
-
-    # set size limits for the columns
-    item_sizes = {"id": 100, "url": 130, "database": 15}
-
-    # append results to hdf
-    with pd.HDFStore(
-        hdf_name, mode="a", complib="blosc:blosclz", complevel=9
-    ) as hdf_output:
-        hdf_output.append(
-            "download_links",
-            download_dataframe,
-            format="t",
-            data_columns=True,
-            min_itemsize=item_sizes,
-            complib="blosc:blosclz",
-            complevel=9,
-        )
-
-    # remove finished ids from the fasta dict
-    fasta_dict = {
-        key: value for key, value in fasta_dict.items() if key not in bold_query.keys()
-    }
-
-    # return the fasta dict again to continue
-    return fasta_dict
+    return download_dataframe
 
 
 # function to update the query size
@@ -395,35 +370,9 @@ async def as_session(
     )
 
     # return the result
-    return await tqdm_asyncio.gather(*tasks, desc="Downloading top 100 hits")
+    return await asyncio.gather(*tasks)
 
 
-# function to check of some of the top 100 hits have already been downloaded
-def top_100_downloaded(hdf_name_top_100_hits, hdf_name_download_links, database):
-    # load the download links
-    download_links = pd.read_hdf(hdf_name_download_links)
-    # filter for the correct database
-    download_links = download_links.loc[download_links["database"] == database]
-    try:
-        # read already downloaded top 100 hits
-        top_100_hits = pd.read_hdf(hdf_name_top_100_hits, key="top_100_hits_unsorted")
-        # only select the correct database
-        top_100_hits = top_100_hits.loc[top_100_hits["database"] == database]
-        # find all ids that already have been selected
-        ids_done = top_100_hits["ID"].unique()
-
-        # remove all links that are already done
-        download_links = download_links[~download_links["id"].isin(ids_done)]
-    except FileNotFoundError:
-        # if there is no data downloaded yet just return all download links
-        pass
-
-    return download_links
-
-
-# function to check which species level hits can used straight away (similarity > 97%, valid name)
-# and where additional data needs to be requested, returns a fresh fasta dict with everything that needs to
-# be identified again
 def check_valid_species_records(fasta_dict, hdf_name_top_100_hits, thresholds):
     # read the hdf
     top_100_hits_species = pd.read_hdf(
@@ -469,15 +418,18 @@ def main(fasta_path, username="", password="", thresholds=[]):
     # read the input fasta
     fasta_dict, fasta_name, project_directory = read_fasta(fasta_path)
 
-    # check if download links have already been generated for any OTUs
-    fasta_dict, hdf_name_download_links = check_already_done(
-        fasta_dict, fasta_name, project_directory, database="species"
+    # generate a name for the top hits hdf file
+    hdf_name_top_100_hits = project_directory.joinpath(
+        "{}_top_100_hits.h5.lz".format(fasta_name)
     )
 
-    # gather download links at species level until all download links are requested
+    # check if any of the ids have been downloaded and saved already. If so remove them from the fasta dict
+    fasta_dict = check_already_downloaded(fasta_dict, hdf_name_top_100_hits, "species")
+
+    # start the download for the species level database
     # give user output
     print(
-        "{}: Starting to gather download links from species level database.".format(
+        "{}: Starting to download from the species level database.".format(
             datetime.datetime.now().strftime("%H:%M:%S")
         )
     )
@@ -485,17 +437,17 @@ def main(fasta_path, username="", password="", thresholds=[]):
     # request the server until all links have been generated
     if fasta_dict:
         with tqdm(total=len(fasta_dict), desc="Generating download links") as pbar:
+            # generate download links first
             while fasta_dict:
                 try:
-                    fasta_dict = gather_download_links(
-                        session,
-                        fasta_dict,
-                        hdf_name_download_links,
-                        query_size,
-                        database="species",
+                    # gather the returned download links to download them straight away
+                    download_dataframe = gather_download_links(
+                        session, fasta_dict, query_size, database="species"
                     )
-                    # update the progress bar
-                    pbar.update(query_size)
+
+                    # set the semaphore to the query size of the original query
+                    sem = asyncio.Semaphore(query_size)
+                    pbar_update = query_size
                     # update the query size by 5
                     query_size = update_query_size(query_size, 5)
 
@@ -513,6 +465,35 @@ def main(fasta_path, username="", password="", thresholds=[]):
                             )
                         )
 
+                    # download the data from the generated links, update the fasta dict after successfull download
+                    # update the description of the progress bar
+                    pbar.set_description("Downloading data")
+
+                    # catch sometimes malformed urls here
+                    try:
+                        # run the control loop
+                        asyncio.run(
+                            as_session(
+                                download_dataframe,
+                                database="species",
+                                hdf_name_top_100_hits=hdf_name_top_100_hits,
+                                semaphore=sem,
+                            )
+                        )
+                    except IndexError:
+                        continue
+
+                    # update the progress bar
+                    pbar.update(pbar_update)
+                    pbar.set_description("Generating download links")
+
+                    # update the fasta dict
+                    fasta_dict = {
+                        id: seq
+                        for (id, seq) in fasta_dict.items()
+                        if id not in set(download_dataframe["id"])
+                    }
+
                 except (ReadTimeout, ConnectionError):
                     # repeat if there is no response
                     # update the query size
@@ -546,36 +527,7 @@ def main(fasta_path, username="", password="", thresholds=[]):
 
     # give user output
     print(
-        "{}: Species level download links successfully generated.".format(
-            datetime.datetime.now().strftime("%H:%M:%S")
-        )
-    )
-
-    # generate a name for the top hits hdf file
-    hdf_name_top_100_hits = project_directory.joinpath(
-        "{}_top_100_hits.h5.lz".format(fasta_name)
-    )
-
-    # check if some of the links have already been downloaded
-    download_links_species = top_100_downloaded(
-        hdf_name_top_100_hits, hdf_name_download_links, database="species"
-    )
-
-    # set the concurrent download limit here
-    # code has been timed to find the optimal download time
-    sem = asyncio.Semaphore(6)
-
-    # continue to download the top 100 hits asynchronosly for species level
-    if not len(download_links_species.index) == 0:
-        asyncio.run(
-            as_session(
-                download_links_species, "species", hdf_name_top_100_hits, semaphore=sem
-            )
-        )
-
-    # give user output
-    print(
-        "{}: Species level top 100 records successfully downloaded.".format(
+        "{}: Starting to download from the all records database.".format(
             datetime.datetime.now().strftime("%H:%M:%S")
         )
     )
@@ -590,7 +542,7 @@ def main(fasta_path, username="", password="", thresholds=[]):
     # reread the fasta to generate a fresh fasta dict
     fasta_dict, fasta_name, project_directory = read_fasta(fasta_path)
 
-    # filter the fasta dict for hits no having a species level hit, reset query size to 1
+    # filter the fasta dict for hits no having a species level hit, perform a second log in
     session, username, password = login.bold_login(username=username, password=password)
     fasta_dict = check_valid_species_records(
         fasta_dict, hdf_name_top_100_hits, thresholds=thresholds
@@ -604,25 +556,25 @@ def main(fasta_path, username="", password="", thresholds=[]):
         )
     )
 
-    # check if download links have already been generated for any OTUs
-    fasta_dict, hdf_name_download_links = check_already_done(
-        fasta_dict, fasta_name, project_directory, database="all_records"
+    # check if any of the ids have been downloaded and saved already. If so remove them from the fasta dict
+    fasta_dict = check_already_downloaded(
+        fasta_dict, hdf_name_top_100_hits, "all_records"
     )
 
     # request the server until all links have been generated
     if fasta_dict:
         with tqdm(total=len(fasta_dict), desc="Generating download links") as pbar:
+            # generate download links first
             while fasta_dict:
                 try:
-                    fasta_dict = gather_download_links(
-                        session,
-                        fasta_dict,
-                        hdf_name_download_links,
-                        query_size,
-                        database="all_records",
+                    # gather the returned download links to download them straight away
+                    download_dataframe = gather_download_links(
+                        session, fasta_dict, query_size, database="all_records"
                     )
-                    # update the progress bar
-                    pbar.update(query_size)
+
+                    # set the semaphore to the query size of the original query
+                    sem = asyncio.Semaphore(query_size)
+                    pbar_update = query_size
                     # update the query size by 5
                     query_size = update_query_size(query_size, 5)
 
@@ -635,16 +587,43 @@ def main(fasta_path, username="", password="", thresholds=[]):
                         )
                     else:
                         tqdm.write(
-                            "{}: Query size stays at {}.".format(
+                            "{}: Query size kept at {}.".format(
                                 datetime.datetime.now().strftime("%H:%M:%S"), query_size
                             )
                         )
+
+                    # download the data from the generated links, update the fasta dict after successfull download
+                    # update the description of the progress bar
+                    pbar.set_description("Downloading data")
+
+                    try:
+                        # run the control loop
+                        asyncio.run(
+                            as_session(
+                                download_dataframe,
+                                database="all_records",
+                                hdf_name_top_100_hits=hdf_name_top_100_hits,
+                                semaphore=sem,
+                            )
+                        )
+                    except IndexError:
+                        continue
+
+                    # update the progress bar
+                    pbar.update(pbar_update)
+                    pbar.set_description("Generating download links")
+
+                    # update the fasta dict
+                    fasta_dict = {
+                        id: seq
+                        for (id, seq) in fasta_dict.items()
+                        if id not in set(download_dataframe["id"])
+                    }
 
                 except (ReadTimeout, ConnectionError):
                     # repeat if there is no response
                     # update the query size
                     query_size = update_query_size(query_size, -5)
-
                     # give user output
                     if query_size != 1:
                         tqdm.write(
@@ -671,33 +650,6 @@ def main(fasta_path, username="", password="", thresholds=[]):
                     session, username, password = login.bold_login(
                         username=username, password=password
                     )
-
-    # give user output
-    print(
-        "{}: All records download links successfully generated.".format(
-            datetime.datetime.now().strftime("%H:%M:%S")
-        )
-    )
-
-    # check if some of the links have already been downloaded
-    download_links_all_records = top_100_downloaded(
-        hdf_name_top_100_hits, hdf_name_download_links, database="all_records"
-    )
-
-    # set the concurrent download limit here
-    # code has been timed to find the optimal download time
-    sem = asyncio.Semaphore(6)
-
-    # continue to download the top 100 hits asynchronosly for all records
-    if not len(download_links_all_records.index) == 0:
-        asyncio.run(
-            as_session(
-                download_links_all_records,
-                "all_records",
-                hdf_name_top_100_hits,
-                semaphore=sem,
-            )
-        )
 
     # give user output
     print(

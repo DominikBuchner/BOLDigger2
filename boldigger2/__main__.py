@@ -1,5 +1,5 @@
 import argparse, sys, datetime
-from boldigger2 import id_engine_coi_v2
+from boldigger2 import id_engine_coi
 from importlib.metadata import version
 
 
@@ -85,7 +85,7 @@ def main():
 
     # run the identification engine
     if arguments.function == "identify":
-        id_engine_coi_v2.main(
+        id_engine_coi.main(
             arguments.fasta_file,
             username=arguments.username,
             password=arguments.password,
