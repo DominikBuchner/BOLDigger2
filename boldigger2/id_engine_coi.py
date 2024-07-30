@@ -469,7 +469,8 @@ def main(fasta_path, username="", password="", thresholds=[]):
                     # update the description of the progress bar
                     pbar.set_description("Downloading data")
 
-                    # catch sometimes malformed urls here
+                    # catch sometimes malformed urls here, produces duplicates in the top 100 download, will be removed
+                    # when downloading additional data / ordering the hits
                     try:
                         # run the control loop
                         asyncio.run(

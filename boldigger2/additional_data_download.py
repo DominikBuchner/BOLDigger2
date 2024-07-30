@@ -20,6 +20,28 @@ def read_and_order(fasta_path, hdf_name_top_100_hits, read_fasta):
     # read the hdf data that needs to be sorted
     top_100_hits = pd.read_hdf(hdf_name_top_100_hits, key="top_100_hits_unsorted")
 
+    # remove duplicate entries from malformed responses here
+    # generate a unique id
+    top_100_hits["unique_id"] = (
+        top_100_hits["ID"] + top_100_hits["database"] + top_100_hits["request_date"]
+    )
+
+    # create a filter
+    filter = top_100_hits.drop_duplicates(subset=["ID", "database", "request_date"])[
+        ["ID", "database", "request_date"]
+    ].reset_index(drop=True)
+
+    # drop the duplicates
+    filter_no_duplicates = filter.drop_duplicates(subset=["ID"]).index
+
+    # select only the entries that are no duplicates or in case of duplication select the 1st answer
+    filter = filter.iloc[filter_no_duplicates]
+    filter["unique_id"] = filter["ID"] + filter["database"] + filter["request_date"]
+
+    # only select those hits from the top 100 hits, drop the unique id after
+    top_100_hits = top_100_hits.loc[top_100_hits["unique_id"].isin(filter["unique_id"])]
+    top_100_hits = top_100_hits.drop(labels=["unique_id"], axis=1)
+
     # add a sorter helper column
     top_100_hits["sorter"] = top_100_hits["ID"].map(sorter)
 
