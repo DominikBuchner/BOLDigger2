@@ -482,6 +482,11 @@ def main(fasta_path, username="", password="", thresholds=[]):
                             )
                         )
                     except (IndexError, ValueError):
+                        tqdm.write(
+                            "{}: Bad download links. Repeating the request.".format(
+                                datetime.datetime.now().strftime("%H:%M:%S"), query_size
+                            )
+                        )
                         continue
 
                     # update the progress bar
@@ -608,6 +613,11 @@ def main(fasta_path, username="", password="", thresholds=[]):
                             )
                         )
                     except (IndexError, ValueError):
+                        tqdm.write(
+                            "{}: Bad download links. Repeating the request.".format(
+                                datetime.datetime.now().strftime("%H:%M:%S"), query_size
+                            )
+                        )
                         continue
 
                     # update the progress bar
