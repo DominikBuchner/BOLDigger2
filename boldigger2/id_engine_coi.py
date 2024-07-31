@@ -481,7 +481,7 @@ def main(fasta_path, username="", password="", thresholds=[]):
                                 semaphore=sem,
                             )
                         )
-                    except IndexError:
+                    except (IndexError, ValueError):
                         continue
 
                     # update the progress bar
@@ -607,7 +607,7 @@ def main(fasta_path, username="", password="", thresholds=[]):
                                 semaphore=sem,
                             )
                         )
-                    except IndexError:
+                    except (IndexError, ValueError):
                         continue
 
                     # update the progress bar
