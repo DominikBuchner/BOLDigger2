@@ -163,11 +163,11 @@ def update_query_size(query_size, increase):
     query_size = query_size + increase
 
     # return the updated value. can only be in the range of 1 to 50
-    if query_size < 1:
-        query_size = 1
+    if query_size < 2:
+        query_size = 2
         return query_size
-    elif query_size > 50:
-        query_size = 50
+    elif query_size > 10:
+        query_size = 10
         return query_size
     else:
         return query_size
@@ -448,8 +448,8 @@ def main(fasta_path, username="", password="", thresholds=[]):
                     # set the semaphore to the query size of the original query
                     sem = asyncio.Semaphore(query_size)
                     pbar_update = query_size
-                    # update the query size by 5
-                    query_size = update_query_size(query_size, 5)
+                    # update the query size by 2
+                    query_size = update_query_size(query_size, 2)
 
                     # give user output
                     if query_size != 50:
@@ -503,7 +503,7 @@ def main(fasta_path, username="", password="", thresholds=[]):
                 except (ReadTimeout, ConnectionError):
                     # repeat if there is no response
                     # update the query size
-                    query_size = update_query_size(query_size, -5)
+                    query_size = update_query_size(query_size, -2)
                     # give user output
                     if query_size != 1:
                         tqdm.write(
@@ -582,7 +582,7 @@ def main(fasta_path, username="", password="", thresholds=[]):
                     sem = asyncio.Semaphore(query_size)
                     pbar_update = query_size
                     # update the query size by 5
-                    query_size = update_query_size(query_size, 5)
+                    query_size = update_query_size(query_size, 2)
 
                     # give user output
                     if query_size != 50:
@@ -634,7 +634,7 @@ def main(fasta_path, username="", password="", thresholds=[]):
                 except (ReadTimeout, ConnectionError):
                     # repeat if there is no response
                     # update the query size
-                    query_size = update_query_size(query_size, -5)
+                    query_size = update_query_size(query_size, -2)
                     # give user output
                     if query_size != 1:
                         tqdm.write(
