@@ -1,4 +1,4 @@
-import more_itertools, asyncio, requests_html, datetime, time
+import more_itertools, asyncio, requests_html, datetime, time, sys
 import pandas as pd
 import numpy as np
 from xml.etree import ElementTree as ET
@@ -32,7 +32,7 @@ def read_and_order(fasta_path, hdf_name_top_100_hits, read_fasta):
     ].reset_index(drop=True)
 
     # drop the duplicates
-    filter_no_duplicates = filter.drop_duplicates(subset=["ID"]).index
+    filter_no_duplicates = filter.drop_duplicates(subset=["ID", "database"]).index
 
     # select only the entries that are no duplicates or in case of duplication select the 1st answer
     filter = filter.iloc[filter_no_duplicates]
