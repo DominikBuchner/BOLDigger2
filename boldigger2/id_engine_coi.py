@@ -585,7 +585,7 @@ def main(fasta_path, username="", password="", thresholds=[]):
                     query_size = update_query_size(query_size, 2)
 
                     # give user output
-                    if query_size != 10:
+                    if query_size != 50:
                         tqdm.write(
                             "{}: Query size updated to {}.".format(
                                 datetime.datetime.now().strftime("%H:%M:%S"), query_size
