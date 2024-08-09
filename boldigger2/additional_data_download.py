@@ -1,12 +1,15 @@
 import more_itertools, asyncio, requests_html, datetime, time, sys
 import pandas as pd
 import numpy as np
-from xml.etree import ElementTree as ET
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from tqdm.asyncio import tqdm_asyncio
 from pathlib import Path
 from tqdm import tqdm
+from boldigger2.exceptions import APIOverload
+from requests.exceptions import ReadTimeout
+from requests.exceptions import ConnectionError
+from bs4 import BeautifulSoup as BSoup
 
 
 # function to sort the hdf dataframe according to the order in the fasta file
@@ -102,6 +105,22 @@ def read_and_order(fasta_path, hdf_name_top_100_hits, read_fasta):
     return top_100_hits, process_ids
 
 
+# function to check if some of the additional data has already been downloaded
+def check_already_downloaded(process_ids, hdf_name_top_100_hits):
+    # try to see if additional data has already been downloaded partly
+    try:
+        already_downloaded = pd.read_hdf(hdf_name_top_100_hits, key="additional_data")
+        already_downloaded = list(already_downloaded["processid"])
+    except KeyError:
+        already_downloaded = []
+
+    # filter all ids that are already done
+    process_ids = [id for id in process_ids if id not in already_downloaded]
+
+    # return the remaining process ids
+    return pd.Series(process_ids)
+
+
 # function to return download links for the BOLD API from the process IDs
 def generate_download_links(process_ids):
     # chunk the process IDs into batches of 100 ids remove duplicates, since we only need to query everything once
@@ -120,68 +139,78 @@ def generate_download_links(process_ids):
 
 # function to parse the xml returned by the BOLD api into a dataframe
 # of the required dimensions
-def xml_to_dataframe(xml_string):
-    # extract the root of the xml tree
-    root = ET.fromstring(xml_string)
-    records = root.findall("record")
+def xml_to_dataframe(response, hdf_name_top_100_hits):
+    # check if the API is overloaded
+    if "You have exceeded" in response.text:
+        raise APIOverload
 
-    # store data here, append data on the go
-    xml_dataframe = pd.DataFrame()
+    # parse the response and transform to dataframe if it is valid
+    soup = BSoup(response.text, "xml")
+    # extract all records
+    records = soup.find_all("record")
 
-    # add process id, record id, bin uri
-    for column_name in ["processid", "record_id", "bin_uri"]:
-        xml_dataframe[column_name] = [
-            (
-                record.find(column_name)
-                if record.find(column_name) == None
-                else record.find(column_name).text
-            )
-            for record in records
-        ]
+    # define the tags to look for
+    tags = [
+        "processid",
+        "record_id",
+        "bin_uri",
+        "sex",
+        "lifestage",
+        "country",
+        "identification_provided_by",
+        "identification_method",
+        "institution_storing",
+    ]
 
-    # gather the remaining data from the API
-    # collect subheaders in a dict, and subelements as lists of the respective key
-    remaining_elements = {
-        "specimen_identifiers": ["institution_storing"],
-        "specimen_desc": ["sex", "lifestage"],
-        "collection_event": ["country"],
-        "taxonomy": ["identification_provided_by", "identification_method"],
+    # extract the relevant data's text fields
+    process_id_data = [
+        [record.find(tag).text if record.find(tag) != None else "" for tag in tags]
+        for record in records
+    ]
+
+    # transfer to dataframe to return
+    process_id_data = pd.DataFrame(process_id_data, columns=tags)
+
+    # append the data to a new key in the hdf storage
+    item_sizes = {
+        "processid": 18,
+        "record_id": 10,
+        "bin_uri": 15,
+        "institution_storing": 150,
+        "sex": 8,
+        "lifestage": 80,
+        "country": 80,
+        "identification_provided_by": 80,
+        "identification_method": 150,
     }
 
-    for subheader in remaining_elements.keys():
-        # find the respective subheader in the xml
-        subheader_data = [record.find(subheader) for record in records]
-
-        # collect the respective subelements and push them into the xml dataframe
-        for column_name in remaining_elements[subheader]:
-            # extract the xml elements first
-            elements = [
-                record.find(column_name) if record != None else None
-                for record in subheader_data
-            ]
-            # dual loop to not loose the None values,to be able to append to dataframe
-            elements = [
-                element.text if element != None else None for element in elements
-            ]
-
-            xml_dataframe[column_name] = elements
-
-    # return the xml dataframe
-    return xml_dataframe
+    # append results to hdf
+    with pd.HDFStore(
+        hdf_name_top_100_hits, mode="a", complib="blosc:blosclz", complevel=9
+    ) as hdf_output:
+        hdf_output.append(
+            "additional_data",
+            process_id_data,
+            format="t",
+            data_columns=True,
+            min_itemsize=item_sizes,
+            complib="blosc:blosclz",
+            complevel=9,
+        )
 
 
 # asynchronous request code to send n requests at once
-async def as_request(url, as_session):
+async def as_request(url, as_session, hdf_name_top_100_hits):
     while True:
         try:
             # request the api
             response = await as_session.get(url, timeout=60)
-            # wait for 18 seconds to not overload the API
-            time.sleep(18)
+            # wait for 5 seconds to not overload the API
+            # time.sleep(5)
 
-            xml_dataframe = xml_to_dataframe(response.text)
+            xml_to_dataframe(response, hdf_name_top_100_hits)
             break
-        except ET.ParseError:
+        except APIOverload:
             # give user output
             tqdm.write(
                 "{}: BOLD API overloaded. Waiting a few minutes.".format(
@@ -189,20 +218,25 @@ async def as_request(url, as_session):
                 )
             )
 
-            time.sleep(600)
+            time.sleep(300)
             continue
-
-    return xml_dataframe
+        except (ReadTimeout, ConnectionError):
+            tqdm.write(
+                "{}: BOLD API did not respond. Retrying.".format(
+                    datetime.datetime.now().strftime("%H:%M:%S")
+                )
+            )
+            continue
 
 
 # function to limit the maximum concurrent downloads
-async def limit_concurrency(url, as_session, semaphore):
+async def limit_concurrency(url, as_session, semaphore, hdf_name_top_100_hits):
     async with semaphore:
-        return await as_request(url, as_session)
+        return await as_request(url, as_session, hdf_name_top_100_hits)
 
 
 # function to create the asynchronous session
-async def as_session(download_links, semaphore):
+async def as_session(download_links, semaphore, hdf_name_top_100_hits):
     as_session = requests_html.AsyncHTMLSession()
     as_session.headers.update(
         {
@@ -219,19 +253,19 @@ async def as_session(download_links, semaphore):
     as_session.mount("http://", adapter)
 
     # generate the tasks to perform
-    tasks = (limit_concurrency(url, as_session, semaphore) for url in download_links)
+    tasks = (
+        limit_concurrency(url, as_session, semaphore, hdf_name_top_100_hits)
+        for url in download_links
+    )
 
     # return the result
     return await tqdm_asyncio.gather(*tasks, desc="Downloading additional data")
 
 
 # function to add the additional data to the top 100 hits
-def add_additional_data(
-    hdf_name_top_100_hits, top_100_hits, process_ids, additional_data
-):
-    # concat the additional data downloaded
-    additional_data = pd.concat(additional_data, axis=0).reset_index(drop=True)
-
+def add_additional_data(hdf_name_top_100_hits, top_100_hits, process_ids):
+    # load the additional data downloaded
+    additional_data = pd.read_hdf(hdf_name_top_100_hits, key="additional_data")
     # transform additional data to dict, retain the column names
     additional_data = additional_data.to_dict("tight")
     column_names = additional_data["columns"][1:]
@@ -322,6 +356,11 @@ def main(fasta_path, hdf_name_top_100_hits, read_fasta):
         fasta_path, hdf_name_top_100_hits, read_fasta
     )
 
+    # filter out all process ids that have already been downloaded
+    process_ids_to_download = check_already_downloaded(
+        process_ids, hdf_name_top_100_hits
+    )
+
     # give user output
     print(
         "{}: Generating download links for additional data.".format(
@@ -330,7 +369,7 @@ def main(fasta_path, hdf_name_top_100_hits, read_fasta):
     )
 
     # generate download links for the process ids, fetch them with async session
-    download_batches = generate_download_links(process_ids)
+    download_batches = generate_download_links(process_ids_to_download)
 
     # request the data asynchronously
     # set the concurrent download limit here
@@ -339,13 +378,17 @@ def main(fasta_path, hdf_name_top_100_hits, read_fasta):
     # skip the download if the data is already present
     if not additional_data_present(hdf_name_top_100_hits):
         # start the download
-        additional_data = asyncio.run(
-            as_session(download_links=download_batches, semaphore=sem)
+        asyncio.run(
+            as_session(
+                download_links=download_batches,
+                semaphore=sem,
+                hdf_name_top_100_hits=hdf_name_top_100_hits,
+            )
         )
 
         # add the metadata to the top 100 hits, push to a new hdf table
         top_100_hits = add_additional_data(
-            hdf_name_top_100_hits, top_100_hits, process_ids, additional_data
+            hdf_name_top_100_hits, top_100_hits, process_ids
         )
 
     # give user output
