@@ -108,7 +108,7 @@ def read_and_order(fasta_path, hdf_name_top_100_hits, read_fasta):
             )
 
         print(
-            "{}: Hits oredered successfully.".format(
+            "{}: Hits ordered successfully.".format(
                 datetime.datetime.now().strftime("%H:%M:%S")
             )
         )
