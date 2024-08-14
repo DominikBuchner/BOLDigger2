@@ -163,8 +163,8 @@ def update_query_size(query_size, increase):
     query_size = query_size + increase
 
     # return the updated value. can only be in the range of 1 to 50
-    if query_size < 2:
-        query_size = 2
+    if query_size < 5:
+        query_size = 5
         return query_size
     elif query_size > 50:
         query_size = 50
@@ -413,7 +413,7 @@ def check_valid_species_records(fasta_dict, hdf_name_top_100_hits, thresholds):
 def main(fasta_path, username="", password="", thresholds=[]):
     # log in to BOLD to generate the session, initialize the query size
     session, username, password = login.bold_login(username=username, password=password)
-    query_size = 2
+    query_size = 5
 
     # read the input fasta
     fasta_dict, fasta_name, project_directory = read_fasta(fasta_path)
@@ -449,7 +449,7 @@ def main(fasta_path, username="", password="", thresholds=[]):
                     sem = asyncio.Semaphore(query_size)
                     pbar_update = query_size
                     # update the query size by 2
-                    query_size = update_query_size(query_size, 2)
+                    query_size = update_query_size(query_size, 5)
 
                     # give user output
                     if query_size != 50:
@@ -503,9 +503,9 @@ def main(fasta_path, username="", password="", thresholds=[]):
                 except (ReadTimeout, ConnectionError):
                     # repeat if there is no response
                     # update the query size
-                    query_size = update_query_size(query_size, -2)
+                    query_size = update_query_size(query_size, -5)
                     # give user output
-                    if query_size != 2:
+                    if query_size != 5:
                         tqdm.write(
                             "{}: BOLD did not respond. Retrying with reduced query size of {}.".format(
                                 datetime.datetime.now().strftime("%H:%M:%S"), query_size
@@ -582,7 +582,7 @@ def main(fasta_path, username="", password="", thresholds=[]):
                     sem = asyncio.Semaphore(query_size)
                     pbar_update = query_size
                     # update the query size by 2
-                    query_size = update_query_size(query_size, 2)
+                    query_size = update_query_size(query_size, 5)
 
                     # give user output
                     if query_size != 50:
@@ -634,9 +634,9 @@ def main(fasta_path, username="", password="", thresholds=[]):
                 except (ReadTimeout, ConnectionError):
                     # repeat if there is no response
                     # update the query size
-                    query_size = update_query_size(query_size, -2)
+                    query_size = update_query_size(query_size, -5)
                     # give user output
-                    if query_size != 2:
+                    if query_size != 5:
                         tqdm.write(
                             "{}: BOLD did not respond. Retrying with reduced query size of {}.".format(
                                 datetime.datetime.now().strftime("%H:%M:%S"), query_size

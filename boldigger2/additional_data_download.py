@@ -1,18 +1,22 @@
-import more_itertools, asyncio, requests_html, datetime, time, sys
+import more_itertools, requests_html, datetime, time, json
 import pandas as pd
 import numpy as np
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-from tqdm.asyncio import tqdm_asyncio
 from pathlib import Path
 from tqdm import tqdm
 from boldigger2.exceptions import APIOverload
+from boldigger2.exceptions import ProxyNotWorking
 from requests.exceptions import ReadTimeout
-from requests.exceptions import ConnectionError
-from bs4 import BeautifulSoup as BSoup
+from requests.exceptions import ChunkedEncodingError
+from requests.exceptions import ProxyError
+from requests.exceptions import ConnectTimeout
+from fp.fp import FreeProxy
+from fp.errors import FreeProxyException
+from fp.errors import FreeProxyException
+from json.decoder import JSONDecodeError
 
 
 # function to sort the hdf dataframe according to the order in the fasta file
+# also removes duplicate entries from malformed requests in the previous step
 def read_and_order(fasta_path, hdf_name_top_100_hits, read_fasta):
     # read in the fasta
     fasta_dict, fasta_name, project_directory = read_fasta(fasta_path)
@@ -61,7 +65,7 @@ def read_and_order(fasta_path, hdf_name_top_100_hits, read_fasta):
         .reset_index(drop=True)
     )
 
-    # override the hdf file with the new, sorted dataframe
+    # add the sorted dataframe to the original hdf storage
     # add the results to the hdf storage
     # set size limits for the columns
     item_sizes = {
@@ -82,6 +86,12 @@ def read_and_order(fasta_path, hdf_name_top_100_hits, read_fasta):
     # only have to write the results once
     try:
         pd.read_hdf(hdf_name_top_100_hits, key="top_100_hits_sorted")
+        # give user output
+        print(
+            "{}: Hits are already ordered from a previous run.".format(
+                datetime.datetime.now().strftime("%H:%M:%S")
+            )
+        )
     except KeyError:
         # append results to hdf
         with pd.HDFStore(
@@ -97,6 +107,12 @@ def read_and_order(fasta_path, hdf_name_top_100_hits, read_fasta):
                 complevel=9,
             )
 
+        print(
+            "{}: Hits oredered successfully.".format(
+                datetime.datetime.now().strftime("%H:%M:%S")
+            )
+        )
+
     # drop process IDs that are empty
     with pd.option_context("future.no_silent_downcasting", True):
         process_ids = top_100_hits["Process_ID"].replace("", np.nan).dropna()
@@ -105,75 +121,104 @@ def read_and_order(fasta_path, hdf_name_top_100_hits, read_fasta):
     return top_100_hits, process_ids
 
 
-# function to check if some of the additional data has already been downloaded
-def check_already_downloaded(process_ids, hdf_name_top_100_hits):
-    # try to see if additional data has already been downloaded partly
+# function to check if for any of the process IDs the additional data has already been downloaded
+# also removes duplicate entries from the process ids to prepare the download
+# split the data up into managable batches of 100 processids
+def data_already_downloaded(process_ids, hdf_name_top_100_hits):
+    # check if the hdf storage already contains additional data
     try:
         already_downloaded = pd.read_hdf(hdf_name_top_100_hits, key="additional_data")
-        already_downloaded = list(already_downloaded["processid"])
-    except KeyError:
+        already_downloaded = already_downloaded["processid"]
+    except:
         already_downloaded = []
 
-    # filter all ids that are already done
-    process_ids = [id for id in process_ids if id not in already_downloaded]
+    # filter all ids that are already have been downloaded
+    filter = set(already_downloaded)
+    process_ids_to_download = [id for id in process_ids if id not in filter]
+    process_ids_to_download = pd.Series(process_ids_to_download).unique()
 
-    # return the remaining process ids
-    return pd.Series(process_ids)
+    # return in batches of 100 ids
+    return more_itertools.chunked(process_ids_to_download, 100)
 
 
-# function to return download links for the BOLD API from the process IDs
-def generate_download_links(process_ids):
-    # chunk the process IDs into batches of 100 ids remove duplicates, since we only need to query everything once
-    process_ids = more_itertools.chunked(process_ids.unique(), 100)
+# function to generate an API download link from a batch of process ids
+def generate_download_link(process_id_batch):
+    url = "http://www.boldsystems.org/index.php/API_Public/specimen?ids={}&format=json".format(
+        "|".join(process_id_batch)
+    )
 
-    # join the download batches
-    download_batches = [
-        "http://www.boldsystems.org/index.php/API_Public/specimen?ids={}".format(
-            "|".join(process_ids_chunk)
-        )
-        for process_ids_chunk in process_ids
-    ]
-
-    return download_batches
+    return url
 
 
 # function to parse the xml returned by the BOLD api into a dataframe
-# of the required dimensions
-def xml_to_dataframe(response, hdf_name_top_100_hits):
-    # check if the API is overloaded
+def json_response_to_dataframe(response, process_id_batch, hdf_name_top_100_hits):
     if "You have exceeded" in response.text:
         raise APIOverload
+    if "REMOTE_ADDR" in response.text:
+        raise ProxyNotWorking
 
-    # parse the response and transform to dataframe if it is valid
-    soup = BSoup(response.text, "xml")
-    # extract all records
-    records = soup.find_all("record")
+    # load the json response
+    response_data = json.loads(response.text)["bold_records"]["records"]
 
-    # define the tags to look for
-    tags = [
-        "processid",
-        "record_id",
-        "bin_uri",
-        "sex",
-        "lifestage",
-        "country",
-        "identification_provided_by",
-        "identification_method",
-        "institution_storing",
-    ]
+    # collect all results of one process id batch here
+    process_id_batch_results = []
 
-    # extract the relevant data's text fields
-    process_id_data = [
-        [record.find(tag).text if record.find(tag) != None else "" for tag in tags]
-        for record in records
-    ]
+    # collect the data from json
+    for process_id in process_id_batch:
+        id_values = response_data.get(process_id, {})
+        # get all values that are not nested first
+        process_id = id_values.get("processid", "")
+        record_id = id_values.get("record_id", "")
+        bin_uri = id_values.get("bin_uri", "")
+        # get data from the specimen identifiers
+        specimen_identifiers = id_values.get("specimen_identifiers", {})
+        institution_storing = specimen_identifiers.get("institution_storing", "")
+        # get data from the specimen description
+        specimen_desc = id_values.get("specimen_desc", {})
+        sex = specimen_desc.get("sex", "")
+        lifestage = specimen_desc.get("lifestage", "")
+        # get data from the collection event
+        collection_event = id_values.get("collection_event", {})
+        country = collection_event.get("country", "")
+        # get data from the taxonomy
+        taxonomy = id_values.get("taxonomy", {})
+        identification_provided_by = taxonomy.get("identification_provided_by", "")
+        identification_method = taxonomy.get("identification_method", "")
 
-    # transfer to dataframe to return
-    process_id_data = pd.DataFrame(process_id_data, columns=tags)
+        # all values together form one new line for the output dataframe
+        process_id_batch_results.append(
+            [
+                process_id,
+                record_id,
+                bin_uri,
+                institution_storing,
+                sex,
+                lifestage,
+                country,
+                identification_provided_by,
+                identification_method,
+            ]
+        )
+
+    # generate a dataframe
+    process_id_batch_results = pd.DataFrame(
+        process_id_batch_results,
+        columns=[
+            "processid",
+            "record_id",
+            "bin_uri",
+            "institution_storing",
+            "sex",
+            "lifestage",
+            "country",
+            "identification_provided_by",
+            "identification_method",
+        ],
+    )
 
     # append the data to a new key in the hdf storage
     item_sizes = {
-        "processid": 18,
+        "processid": 30,
         "record_id": 10,
         "bin_uri": 15,
         "institution_storing": 150,
@@ -190,7 +235,7 @@ def xml_to_dataframe(response, hdf_name_top_100_hits):
     ) as hdf_output:
         hdf_output.append(
             "additional_data",
-            process_id_data,
+            process_id_batch_results,
             format="t",
             data_columns=True,
             min_itemsize=item_sizes,
@@ -199,67 +244,86 @@ def xml_to_dataframe(response, hdf_name_top_100_hits):
         )
 
 
-# asynchronous request code to send n requests at once
-async def as_request(url, as_session, hdf_name_top_100_hits):
+# function to generate a new proxy
+def fresh_proxy():
     while True:
         try:
-            # request the api
-            response = await as_session.get(url, timeout=60)
-            # wait for 5 seconds to not overload the API
-            # time.sleep(5)
-
-            xml_to_dataframe(response, hdf_name_top_100_hits)
-            break
-        except APIOverload:
-            # give user output
+            proxy = FreeProxy(https=True, rand=True).get()
             tqdm.write(
-                "{}: BOLD API overloaded. Waiting a few minutes.".format(
+                "{}: Proxy set to {}.".format(
+                    datetime.datetime.now().strftime("%H:%M:%S"), proxy
+                )
+            )
+            return proxy
+        except FreeProxyException:
+            tqdm.write(
+                "{}: No proxy available, waiting.".format(
                     datetime.datetime.now().strftime("%H:%M:%S")
                 )
             )
-
-            time.sleep(300)
-            continue
-        except (ReadTimeout, ConnectionError):
-            tqdm.write(
-                "{}: BOLD API did not respond. Retrying.".format(
-                    datetime.datetime.now().strftime("%H:%M:%S")
-                )
-            )
+            time.sleep(60)
             continue
 
 
-# function to limit the maximum concurrent downloads
-async def limit_concurrency(url, as_session, semaphore, hdf_name_top_100_hits):
-    async with semaphore:
-        return await as_request(url, as_session, hdf_name_top_100_hits)
+def download_data(process_ids_to_download, hdf_name_top_100_hits):
+    with requests_html.HTMLSession() as session:
+        # create a proxy for later
+        proxy = ""
+        for id_batch in tqdm(
+            list(process_ids_to_download), desc="Downloading additional data"
+        ):
+            # create a url for the id batch
+            url = generate_download_link(id_batch)
 
-
-# function to create the asynchronous session
-async def as_session(download_links, semaphore, hdf_name_top_100_hits):
-    as_session = requests_html.AsyncHTMLSession()
-    as_session.headers.update(
-        {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.82 Safari/537.36"
-        }
-    )
-    retry_strategy = Retry(
-        total=15,
-        status_forcelist=[400, 401, 403, 404, 413, 429, 502, 503, 504],
-        backoff_factor=1,
-    )
-    adapter = HTTPAdapter(max_retries=retry_strategy)
-    as_session.mount("https://", adapter)
-    as_session.mount("http://", adapter)
-
-    # generate the tasks to perform
-    tasks = (
-        limit_concurrency(url, as_session, semaphore, hdf_name_top_100_hits)
-        for url in download_links
-    )
-
-    # return the result
-    return await tqdm_asyncio.gather(*tasks, desc="Downloading additional data")
+            # run until getting a valid response
+            while True:
+                try:
+                    # as long as the original IP is working, use this one
+                    if not proxy:
+                        response = session.get(url, timeout=30)
+                    else:
+                        response = session.get(
+                            url, timeout=30, proxies={"http": proxy, "https": proxy}
+                        )
+                    # parse the response
+                    json_response_to_dataframe(
+                        response, id_batch, hdf_name_top_100_hits
+                    )
+                    break
+                except (
+                    ReadTimeout,
+                    ConnectTimeout,
+                    ChunkedEncodingError,
+                    ConnectionError,
+                ):
+                    tqdm.write(
+                        "{}: Read timed out, retrying.".format(
+                            datetime.datetime.now().strftime("%H:%M:%S")
+                        )
+                    )
+                    continue
+                except APIOverload:
+                    tqdm.write(
+                        "{}: API overloaded. Switching proxy.".format(
+                            datetime.datetime.now().strftime("%H:%M:%S")
+                        )
+                    )
+                    # set ip adress via a proxy
+                    proxy = fresh_proxy()
+                    continue
+                except (ProxyError, ProxyNotWorking):
+                    # set ip adress via a proxy
+                    proxy = fresh_proxy()
+                    continue
+                except JSONDecodeError:
+                    tqdm.write(
+                        "{}: Malformed response. Switching proxy.".format(
+                            datetime.datetime.now().strftime("%H:%M:%S")
+                        )
+                    )
+                    # set ip adress via a proxy
+                    proxy = fresh_proxy()
+                    continue
 
 
 # function to add the additional data to the top 100 hits
@@ -346,7 +410,7 @@ def additional_data_present(hdf_name_top_100_hits):
 def main(fasta_path, hdf_name_top_100_hits, read_fasta):
     # give user output
     print(
-        "{}: Ordering top 100 hits.".format(
+        "{}: Trying to order the top 100 hits.".format(
             datetime.datetime.now().strftime("%H:%M:%S")
         )
     )
@@ -356,35 +420,15 @@ def main(fasta_path, hdf_name_top_100_hits, read_fasta):
         fasta_path, hdf_name_top_100_hits, read_fasta
     )
 
-    # filter out all process ids that have already been downloaded
-    process_ids_to_download = check_already_downloaded(
+    # check if some of the ids have already been downloaded
+    process_ids_to_download = data_already_downloaded(
         process_ids, hdf_name_top_100_hits
     )
 
-    # give user output
-    print(
-        "{}: Generating download links for additional data.".format(
-            datetime.datetime.now().strftime("%H:%M:%S")
-        )
-    )
-
-    # generate download links for the process ids, fetch them with async session
-    download_batches = generate_download_links(process_ids_to_download)
-
-    # request the data asynchronously
-    # set the concurrent download limit here
-    sem = asyncio.Semaphore(1)
-
     # skip the download if the data is already present
     if not additional_data_present(hdf_name_top_100_hits):
-        # start the download
-        asyncio.run(
-            as_session(
-                download_links=download_batches,
-                semaphore=sem,
-                hdf_name_top_100_hits=hdf_name_top_100_hits,
-            )
-        )
+        # download the data
+        download_data(process_ids_to_download, hdf_name_top_100_hits)
 
         # add the metadata to the top 100 hits, push to a new hdf table
         top_100_hits = add_additional_data(
