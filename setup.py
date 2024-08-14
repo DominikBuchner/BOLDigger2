@@ -33,6 +33,7 @@ setuptools.setup(
         "openpyxl>=3.1.1",
         "pyarrow>=11.0.0",
         "lxml_html_clean>=0.1.1",
+        "free-proxy >= 1.1.1",
     ],
     include_package_data=True,
     classifiers=[
