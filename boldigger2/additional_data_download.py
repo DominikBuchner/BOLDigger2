@@ -249,7 +249,7 @@ def json_response_to_dataframe(response, process_id_batch, hdf_name_top_100_hits
 def fresh_proxy():
     while True:
         try:
-            proxy = FreeProxy(https=True).get()
+            proxy = FreeProxy(https=True, rand=True).get()
             tqdm.write(
                 "{}: Proxy set to {}.".format(
                     datetime.datetime.now().strftime("%H:%M:%S"), proxy

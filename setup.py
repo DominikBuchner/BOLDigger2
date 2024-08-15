@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="boldigger2",
-    version="2.1.5",
+    version="2.1.6",
     author="Dominik Buchner",
     author_email="dominik.buchner524@googlemail.com",
     description="An even better python package to query different databases of boldsystems.org",
