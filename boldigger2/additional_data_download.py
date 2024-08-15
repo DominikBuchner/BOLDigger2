@@ -275,6 +275,8 @@ def download_data(process_ids_to_download, hdf_name_top_100_hits):
             # create a url for the id batch
             url = generate_download_link(id_batch)
 
+            # define a timeout counter so set a fresh proxy from time to time
+            timeout_counter = 0
             # run until getting a valid response
             while True:
                 try:
@@ -301,6 +303,10 @@ def download_data(process_ids_to_download, hdf_name_top_100_hits):
                             datetime.datetime.now().strftime("%H:%M:%S")
                         )
                     )
+                    timeout_counter += 1
+                    if timeout_counter >= 10:
+                        proxy = fresh_proxy()
+                        timeout_counter = 0
                     continue
                 except APIOverload:
                     tqdm.write(
