@@ -13,6 +13,7 @@ from fp.fp import FreeProxy
 from fp.errors import FreeProxyException
 from fp.errors import FreeProxyException
 from json.decoder import JSONDecodeError
+from urllib3.exceptions import ReadTimeoutError
 
 
 # function to sort the hdf dataframe according to the order in the fasta file
@@ -282,10 +283,10 @@ def download_data(process_ids_to_download, hdf_name_top_100_hits):
                 try:
                     # as long as the original IP is working, use this one
                     if not proxy:
-                        response = session.get(url, timeout=30)
+                        response = session.get(url, timeout=60)
                     else:
                         response = session.get(
-                            url, timeout=30, proxies={"http": proxy, "https": proxy}
+                            url, timeout=60, proxies={"http": proxy, "https": proxy}
                         )
                     # parse the response
                     json_response_to_dataframe(
@@ -297,6 +298,7 @@ def download_data(process_ids_to_download, hdf_name_top_100_hits):
                     ConnectTimeout,
                     ChunkedEncodingError,
                     ConnectionError,
+                    ReadTimeoutError,
                 ):
                     tqdm.write(
                         "{}: Read timed out, retrying.".format(
