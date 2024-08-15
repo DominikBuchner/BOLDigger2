@@ -263,7 +263,7 @@ def fresh_proxy():
                 )
             )
             time.sleep(60)
-            continue
+            return ""
 
 
 def download_data(process_ids_to_download, hdf_name_top_100_hits):
