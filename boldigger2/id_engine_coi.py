@@ -210,13 +210,15 @@ async def as_request(species_id, url, as_session, database, hdf_name_top_100_hit
             ],
         )
 
-    # read the tables from the response if the result table is not broken
-    response_table = pd.read_html(
-        StringIO(str(response)),
-        header=0,
-        converters={"Similarity (%)": float},
-        flavor="html5lib",
-    )
+    # add an else here, response table only has to be parsed if the result table is not broken
+    else:
+        # read the tables from the response if the result table is not broken
+        response_table = pd.read_html(
+            StringIO(str(response)),
+            header=0,
+            converters={"Similarity (%)": float},
+            flavor="html5lib",
+        )
 
     # code to generate the no match table
     if len(response_table) == 2:
