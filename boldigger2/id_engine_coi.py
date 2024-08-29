@@ -210,7 +210,6 @@ async def as_request(species_id, url, as_session, database, hdf_name_top_100_hit
             ],
         )
 
-    # add an else here, response table only has to be parsed if the result table is not broken
     else:
         # read the tables from the response if the result table is not broken
         response_table = pd.read_html(
@@ -220,12 +219,47 @@ async def as_request(species_id, url, as_session, database, hdf_name_top_100_hit
             flavor="html5lib",
         )
 
-    # code to generate the no match table
-    if len(response_table) == 2:
-        result = pd.DataFrame(
-            [[species_id] + ["NoMatch"] * 7 + [0.0] + [""] * 2],
-            columns=[
-                "ID",
+        # code to generate the no match table
+        if len(response_table) == 2:
+            result = pd.DataFrame(
+                [[species_id] + ["NoMatch"] * 7 + [0.0] + [""] * 2],
+                columns=[
+                    "ID",
+                    "Phylum",
+                    "Class",
+                    "Order",
+                    "Family",
+                    "Genus",
+                    "Species",
+                    "Subspecies",
+                    "Similarity",
+                    "Status",
+                    "Process_ID",
+                ],
+            )
+        else:
+            # further strip down the html to only collect the top 100 hits irrespective of database used
+            if database == "species":
+                response = response.select('h3:-soup-contains("Top 100 Matches")')[
+                    -1
+                ].find_next("table", class_="table resultsTable noborder")
+            else:
+                response = response.select('h3:-soup-contains("Top 100 Matches")')[
+                    -1
+                ].find_next("table", class_="resultsTable noborder")
+
+            # finally scrape the correct response table
+            result = pd.read_html(
+                StringIO(str(response)),
+                header=0,
+                converters={"Similarity (%)": float},
+                flavor="html5lib",
+            )[-1]
+
+            ids = [
+                tag.get("id") for tag in response.find_all(class_="publicrecord")
+            ]  # collect process ids for public records
+            result.columns = [
                 "Phylum",
                 "Class",
                 "Order",
@@ -235,49 +269,14 @@ async def as_request(species_id, url, as_session, database, hdf_name_top_100_hit
                 "Subspecies",
                 "Similarity",
                 "Status",
-                "Process_ID",
-            ],
-        )
-    else:
-        # further strip down the html to only collect the top 100 hits irrespective of database used
-        if database == "species":
-            response = response.select('h3:-soup-contains("Top 100 Matches")')[
-                -1
-            ].find_next("table", class_="table resultsTable noborder")
-        else:
-            response = response.select('h3:-soup-contains("Top 100 Matches")')[
-                -1
-            ].find_next("table", class_="resultsTable noborder")
+            ]
+            result["Process_ID"] = [
+                ids.pop(0) if status else np.nan
+                for status in np.where(result["Status"] == "Published", True, False)
+            ]
 
-        # finally scrape the correct response table
-        result = pd.read_html(
-            StringIO(str(response)),
-            header=0,
-            converters={"Similarity (%)": float},
-            flavor="html5lib",
-        )[-1]
-
-        ids = [
-            tag.get("id") for tag in response.find_all(class_="publicrecord")
-        ]  # collect process ids for public records
-        result.columns = [
-            "Phylum",
-            "Class",
-            "Order",
-            "Family",
-            "Genus",
-            "Species",
-            "Subspecies",
-            "Similarity",
-            "Status",
-        ]
-        result["Process_ID"] = [
-            ids.pop(0) if status else np.nan
-            for status in np.where(result["Status"] == "Published", True, False)
-        ]
-
-        # add an identifier column to be able to sort the table
-        result.insert(0, "ID", species_id)
+            # add an identifier column to be able to sort the table
+            result.insert(0, "ID", species_id)
 
     # fill na values with empty strings to make frames compatible with hdf format
     result = result.fillna("")
