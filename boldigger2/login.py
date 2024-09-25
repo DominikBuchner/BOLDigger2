@@ -30,7 +30,7 @@ def bold_login(username="", password=""):
     # create the adapter
     adapter = HTTPAdapter(max_retries=retry_strategy)
     # mount the adapter to the session
-    session.mount("http://", adapter)
+    session.mount("https://", adapter)
 
     # perform the post request to log in with this data
     data = {
@@ -41,10 +41,10 @@ def bold_login(username="", password=""):
     }
 
     # send the post request to boldsystems.org
-    session.post("http://boldsystems.org/index.php/Login", data=data)
+    session.post("https://boldsystems.org/index.php/Login", data=data)
 
     # test if the login was successfull
-    bold_url = session.get("http://boldsystems.org")
+    bold_url = session.get("https://boldsystems.org")
 
     # parse the returned html
     soup = BSoup(bold_url.text, "html.parser")
