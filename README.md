@@ -1,4 +1,6 @@
 # BOLDigger2
+
+# IMPORTANT: Due to the update of Boldsystems from v4 to v5 BOLDigger2 as well as BOLDigger is currently not working. I'm working on an update, please stay tuned. I need access as much as any other users ;).
 ![boldigger_logo](https://github.com/DominikBuchner/BOLDigger2/assets/38790188/0cb8ac93-139d-47df-9d78-380d76dd0033)
 
 [![Downloads](https://pepy.tech/badge/boldigger2)](https://pepy.tech/project/boldigger2)
