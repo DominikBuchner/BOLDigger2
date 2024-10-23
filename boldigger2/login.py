@@ -41,10 +41,10 @@ def bold_login(username="", password=""):
     }
 
     # send the post request to boldsystems.org
-    session.post("https://boldsystems.org/index.php/Login", data=data)
+    session.post("https://v4.boldsystems.org/index.php/Login", data=data)
 
     # test if the login was successfull
-    bold_url = session.get("https://boldsystems.org")
+    bold_url = session.get("https://v4.boldsystems.org")
 
     # parse the returned html
     soup = BSoup(bold_url.text, "html.parser")

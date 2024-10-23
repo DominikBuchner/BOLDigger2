@@ -130,7 +130,7 @@ def gather_download_links(session, fasta_dict, query_size, database):
 
     # post the request, reduce timeout to 5 minutes, decrease query size instead of just retrying
     response = session.post(
-        "https://boldsystems.org/index.php/IDS_IdentificationRequest",
+        "https://v4.boldsystems.org/index.php/IDS_IdentificationRequest",
         data=post_request_data,
         timeout=300,
     )
@@ -139,7 +139,7 @@ def gather_download_links(session, fasta_dict, query_size, database):
     soup = BSoup(response.text, "html5lib")
     download_links = soup.find_all("span", style="text-decoration: none")
     download_links = [
-        "http://boldsystems.org" + download_links[i].get("result")
+        "http://v4.boldsystems.org" + download_links[i].get("result")
         for i in range(len(download_links))
     ]
 

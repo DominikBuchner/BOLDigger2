@@ -356,7 +356,7 @@ def add_additional_data(hdf_name_top_100_hits, top_100_hits, process_ids):
 
     # add specimen page links
     additional_data["specimen_page_url"] = [
-        "http://www.boldsystems.org/index.php/MAS_DataRetrieval_OpenSpecimen?selectedrecordid={}".format(
+        "http://www.v4.boldsystems.org/index.php/MAS_DataRetrieval_OpenSpecimen?selectedrecordid={}".format(
             record_id
         )
         for record_id in additional_data["record_id"]
